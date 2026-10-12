@@ -1,4 +1,4 @@
-# Signal Monkee
+# Signal MonkEE
 
 <img width="1777" height="1003" alt="Example_Plot" src="https://github.com/user-attachments/assets/e17d8593-74f3-406e-a42c-dd16f57880a6" />
 
