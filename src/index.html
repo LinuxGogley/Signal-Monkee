@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Signal Monkee</title>
+<link rel="icon" type="image/png" href="%%FAV%%">
+<style>/*LEAFLET_CSS*/</style>
+<style>/*APP_CSS*/</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="logo"><img class="mascot" alt="Signal Monkee mascot" src="%%MASCOT%%">Signal Monkee <small>terrain path &amp; coverage</small></div>
+    <input id="search" placeholder="Search: city, ICAO (KLAX), lat,lon, or 'tx'/'rx'…" autocomplete="off">
+    <div class="seg" id="baseSeg"><button data-b="map" class="on">Map</button><button data-b="sat">Satellite</button><button data-b="flat">Contrast</button></div>
+    <div class="hgrow"></div>
+    <div class="seg" id="unitSeg" title="Height units"><button data-u="m" class="on">m</button><button data-u="ft">ft</button></div>
+    <span id="status"><span class="dot"></span><span id="statusTxt">ready</span></span>
+  </header>
+  <nav id="rail"></nav>
+  <aside id="panel">
+    <div id="pbody"></div>
+    <div class="bigbtns" id="runbtns">
+      <button class="btn inf" id="bSave" title="Save project (JSON)">💾 Save</button>
+      <button class="btn" id="bLoad" title="Load project (JSON)">📂 Load</button>
+      <button class="btn pri" id="bP2P" title="Run point-to-point path analysis (P)">▶ Path</button>
+      <button class="btn pri" id="bCov" title="Run area coverage (C)" style="background:#1d7f4c">▶ Coverage</button>
+    </div>
+    <div id="log"></div>
+  </aside>
+  <main id="mapwrap">
+    <div id="map"></div>
+    <div id="maptools">
+      <button class="hbtn" id="pickTx" title="Click map to place transmitter (T)">📍 Tx</button>
+      <button class="hbtn" id="pickRx" title="Click map to place receiver (R)">📍 Rx</button>
+      <button class="hbtn" id="pickTp" title="Click map to add test points (A)">＋ Test pt</button>
+      <div style="position:relative"><button class="hbtn" id="clrRes" title="Clear results or site markers">🧹 Clear ▾</button><div id="clrMenu" class="card hidden" style="position:absolute;right:0;top:32px;z-index:900;min-width:220px;padding:4px"><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="res">Clear results (coverage, path, grids)</button><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="sites">Clear Tx / Rx markers</button><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="all">Clear everything (incl. 🛰 point)</button></div></div>
+      <button class="hbtn" id="pickGn" title="Click map to set GNSS/SATCOM analysis point (G)">🛰 Point</button>
+    </div>
+    <div id="legend"></div>
+    <div id="hud"></div>
+    <div id="staleBar" style="display:none;position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:650;align-items:center;gap:8px;background:rgba(74,59,16,.95);border:1px solid var(--warn);border-radius:6px;padding:5px 10px">Sites moved — results show the previous placement. <button class="btn sm pri" onclick="RF.runP2P()">▶ Path</button><button class="btn sm" onclick="COV.run()">▶ Coverage</button></div>
+    <div id="prog"><span id="progTxt">Working…</span><div class="bar"><i id="progBar"></i></div></div>
+  </main>
+  <section id="drawer">
+    <div class="dh" id="dhandle">
+      <div class="seg" id="dtabs"><button data-t="summary">Summary</button><button data-t="profile" class="on">Profile</button><button data-t="report">Report</button><button data-t="tp">Test points</button><button data-t="info">Info</button></div>
+      <span class="hgrow" style="flex:1"></span>
+      <select id="pfView" class="inp" style="width:auto;padding:2px 6px" title="Profile view"><option value="curved">Curved earth</option><option value="fresnel">Fresnel clearance (relative to LOS)</option><option value="flat">Flat earth</option></select>
+      <button class="btn sm inf" id="dlPdf">⬇ PDF report</button>
+      <button class="btn sm" id="dlReport">⬇ Report .txt</button>
+      <button class="btn sm" id="dlProfile">⬇ Profile .png</button>
+      <button class="btn sm" id="dClose">✕</button>
+    </div>
+    <div class="db">
+      <div class="tab" data-t="summary"><div id="sumTab"></div></div>
+      <div class="tab on" data-t="profile"><canvas id="profileCv"></canvas></div>
+      <div class="tab" data-t="report"><pre class="report" id="reportTxt">Run a path analysis to generate the SPLAT!-style report.</pre></div>
+      <div class="tab" data-t="tp"><div id="tpTable"></div></div>
+      <div class="tab" data-t="info"><div id="infoTab" style="padding:10px 14px"></div></div>
+    </div>
+  </section>
+</div>
+<input type="file" id="fileIn" class="hidden">
+<script>/*LIBS*/</script>
+<script id="workerSrc" type="text/js-worker">/*WORKER*/</script>
+<script>/*DATA*/</script>
+<script>/*APP*/</script>
+</body>
+</html>

@@ -1,0 +1,28 @@
+{
+  "name": "signal-monkee",
+  "productName": "Signal Monkee",
+  "version": "1.0.0",
+  "description": "Terrain-aware RF path link and coverage tool (SPLAT!-style) as a desktop app",
+  "main": "main.js",
+  "license": "UNLICENSED",
+  "scripts": {
+    "copy": "node -e \"require('fs').copyFileSync('../dist/Signal_Monkee.html','Signal_Monkee.html');require('fs').copyFileSync('../data/mascot.png','icon.png')\"",
+    "start": "npm run copy && electron .",
+    "dist": "npm run copy && electron-builder",
+    "dist:win": "npm run copy && electron-builder --win portable",
+    "dist:linux": "npm run copy && electron-builder --linux AppImage",
+    "dist:mac": "npm run copy && electron-builder --mac dmg"
+  },
+  "devDependencies": {
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "io.signalmonkee.app",
+    "files": ["main.js", "Signal_Monkee.html", "icon.png"],
+    "icon": "icon.png",
+    "win": { "target": "portable" },
+    "linux": { "target": "AppImage", "category": "Science" },
+    "mac": { "target": "dmg", "category": "public.app-category.utilities" }
+  }
+}
