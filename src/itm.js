@@ -1,5 +1,19 @@
 /* ITM — Longley-Rice Irregular Terrain Model, point-to-point mode.
- * Faithful JavaScript port of the NTIA/ITS reference implementation (github.com/NTIA/itm, v1.4).
+ *
+ * Derived from the ITS Irregular Terrain Model reference implementation (C++, v1.4),
+ * https://github.com/NTIA/itm, developed by the National Telecommunications and Information
+ * Administration (NTIA) / Institute for Telecommunication Sciences. The original software is a
+ * work of the U.S. Government (15 U.S.C. 105) and is provided by NTIA "AS IS" without warranty.
+ * Acknowledgment: the ITM algorithm and reference code are the work of NTIA/ITS.
+ *
+ * Changes made (October 2026, for Signal Monkee):
+ *  - translated from C++ to JavaScript; complex arithmetic reimplemented with helper functions
+ *  - std::nth_element replaced by an equivalent quickselect; per-call arrays replaced by reusable
+ *    buffers (performance only, identical results)
+ *  - the point-to-point entry point (p2p) returns intermediate values with the loss
+ *  Verified against the original C++ on 3,000 randomized paths (max difference ~5e-11 dB);
+ *  see tools/validate_itm.js.
+ *
  * pfl format: [np, xi, z0, z1, ... z_np]  (np intervals, np+1 elevations, xi spacing in metres)
  */
 var ITM = (function () {
