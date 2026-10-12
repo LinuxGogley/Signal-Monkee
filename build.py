@@ -26,6 +26,9 @@ APP_MODULES = [
     'app_sat.js',    # GNSS & SATCOM: SGP4, sky plots, DOP, terrain masks, GEO look angles
     'app_tp.js',     # test points, KML/KMZ + ZIP writer, CSV, project save/load
     'app_ops.js',    # pass/fail verdict, Summary card, clear results, PDF report
+    'app_opmode.js', # Operator mode: one-page line-of-sight check, mode switching
+    'app_los.js',    # LOS planning: terrain-only line of sight and viewshed (no radio settings)
+    'app_offline.js',# offline data packages (build on an online PC, import on an offline one)
     'app_main.js',   # terrain/help panels, panel registration, boot()
 ]
 WORKER_MODULES = ['itm.js', 'propcore.js', 'worker.js']

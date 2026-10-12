@@ -13,17 +13,26 @@ var DEFAULTS = {
   model: 'itm', hataEnv: 1, clutterDb: 0,
   itm: { climate: 5, N0: 301, pol: 1, eps: 15, sigma: 0.005, mdvar: 12, time: 50, loc: 50, sit: 50, ground: 0 },
   kOverride: '', p2pZ: 12,
-  cov: { radius: 30, maxSteps: 500, rays: 0, display: 'dbm', top: -20, bottom: -112, step: 4, palette: 'rainbow', opacity: 0.7, rxH: 2, rxMode: 'agl', showBelow: false, maxTiles: 250, jsThr: 30, gnssSig: -128.5 },
+  cov: { radius: 30, maxSteps: 500, rays: 0, display: 'dbm', top: -20, bottom: -112, step: 4, palette: 'rainbow', opacity: 0.7, rxH: 2, rxMode: 'agl', showBelow: false, maxTiles: 250 },
   units: { h: 'm' },
-  base: 'map', mapStyle: 'esritopo', flatTheme: 'gray', reqMargin: 10, satLabels: true, customTiles: '',
+  base: 'map', mapStyle: 'esritopo', flatTheme: 'outline', flatRelief: true, reqMargin: 10, satLabels: true, customTiles: '',
   gnss: { mask: 5, terrain: true, horizonKm: 15, when: '', grid: 36 },
   layers: { airportsL: true, airportsM: true, airportsS: false, towers: true, artcc: true, rco: false, navaids: false, cities: true, vectors: true, gnssAreas: false, ham: true, dmr: true, mesh: true, meshRolesOnly: false, hamDigitalOnly: false, hamAnalogOnly: false },
-  rbToken: '', rbState: 'California'
+  rbToken: '', rbState: 'California',
+  mode: 'engineer', satSrc: 'esri',
+  los: { earth: 'std', radius: 30, rxMode: 'agl', rxH: 2, showHidden: true },
+  offline: { area: 'view', radius: 60, tz: 12, img: 'none', iz: 13, tle: true, extra: true, applySettings: false },
+  op: { minRssi: -100, earth: 'std', covDisplay: 'dbm' }
 };
 var S = loadState();
-if ((S.themeV || 0) < 3) { S.flatTheme = 'gray'; S.themeV = 3; }
+function THEMES_OK(t) { return ['outline', 'gray', 'night', 'hivis'].indexOf(t) >= 0; }
+/* Operator mode = simplified geometric line-of-sight + free-space RSSI with isotropic antennas */
+function OPM() { return S.mode === 'operator'; }
+if ((S.themeV || 0) < 4) { S.flatTheme = 'outline'; S.themeV = 4; }
+if (!THEMES_OK(S.flatTheme)) S.flatTheme = 'outline';
 delete S.datalink; delete S.dlPreset; delete S.minTput; delete S.mcsActive; delete S.uiMode; delete S.autoP2P;
-if (S.cov.display === 'mcs') S.cov.display = 'dbm';
+if (S.cov.display === 'mcs' || S.cov.display === 'js') S.cov.display = 'dbm';
+delete S.cov.jsThr; delete S.cov.gnssSig;
 if (S.tx.placed === undefined) S.tx.placed = true; if (S.rx.placed === undefined) S.rx.placed = true;
 function deepMerge(a, b) { for (var k in b) { if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]) && a[k] && typeof a[k] === 'object' && !Array.isArray(a[k])) deepMerge(a[k], b[k]); else if (b[k] !== undefined) a[k] = b[k]; } return a; }
 function loadState() {
@@ -112,6 +121,37 @@ function fetchJSONorText(url, opts, asText) {
   });
 }
 
+
+/* ---------- minimalist inline icons (24×24, 1.8 stroke, currentColor — same style as the rail) ---------- */
+var ICO = {
+  pin: '<path d="M12 21s-6.5-5.8-6.5-10.5a6.5 6.5 0 0 1 13 0C18.5 15.2 12 21 12 21z"/><circle cx="12" cy="10.5" r="2.3"/>',
+  signal: '<path d="M4 20v-3M9 20v-7M14 20v-11M19 20V5"/>',
+  feeder: '<path d="M12 3v18M8 7l4-4 4 4M8 17l4 4 4-4"/>',
+  antenna: '<path d="M12 10v11M8.5 21h7M12 10l-3.5 11M12 10l3.5 11"/><path d="M7 4.5a7 7 0 0 0 0 9M17 4.5a7 7 0 0 1 0 9"/>',
+  rx: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 17.5h2"/>',
+  model: '<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+  globe: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.7 3.8 5.7 3.8 9s-1.3 6.3-3.8 9c-2.5-2.7-3.8-5.7-3.8-9S9.5 5.7 12 3z"/>',
+  output: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 15l5-5 4 4 3-3 6 6"/><circle cx="16" cy="8" r="1.5"/>',
+  save: '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M8 3v5h7V3M8 21v-6h8v6"/>',
+  open: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
+  play: '<path d="M8 5.5v13l10-6.5z"/>',
+  download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19h14"/>',
+  clear: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  sat: '<path d="m13 7 4 4-6 6-4-4z"/><path d="m15 5 2-2 4 4-2 2M9 19l-2 2-4-4 2-2M4 20l3-3"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  swap: '<path d="M4 8h14M14 4l4 4-4 4M20 16H6M10 12l-4 4 4 4"/>',
+  close: '<path d="M6 6l12 12M18 6 6 18"/>',
+  zoom: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+  eye: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+  layers: '<path d="M12 3 2 8l10 5 10-5-10-5z"/><path d="m2 13 10 5 10-5"/>',
+  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  png: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 16 5-5 4 4 3-3 6 6"/>',
+  check: '<path d="M5 12.5 10 17l9-10"/>'
+};
+function ico(name, cls) { return '<svg class="ico' + (cls ? ' ' + cls : '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + (ICO[name] || '') + '</svg>'; }
+/* elements written in index.html as <button data-ico="pin">Tx</button> get their icon at boot */
+function applyIcons(root) { (root || document).querySelectorAll('[data-ico]').forEach(function (el) { if (!el.querySelector(':scope > svg.ico')) el.insertAdjacentHTML('afterbegin', ico(el.dataset.ico)); }); }
+
 /* ---------- embedded data (gzip+base64) ---------- */
 var DATA = {};
 function gunzipB64(b64) {
@@ -167,6 +207,8 @@ function initMap() {
   map.zoomControl.setPosition('bottomright');
   rnd = L.canvas({ padding: 0.3 });
   L.control.scale({ position: 'bottomright', imperial: true }).addTo(map);
+  map.createPane('landPane'); map.getPane('landPane').style.zIndex = 150; map.getPane('landPane').style.pointerEvents = 'none';
+  map.createPane('reliefPane'); map.getPane('reliefPane').style.zIndex = 160; map.getPane('reliefPane').style.pointerEvents = 'none';
   map.createPane('covPane'); map.getPane('covPane').style.zIndex = 380;
   map.createPane('vecPane'); map.getPane('vecPane').style.zIndex = 390; map.getPane('vecPane').style.pointerEvents = 'none';
   buildBaseLayers();
@@ -194,11 +236,12 @@ var TILE = {
 function tl(def, extra) { return L.tileLayer(def[0], Object.assign({ attribution: def[1], maxZoom: 20, maxNativeZoom: def[2] }, extra || {})); }
 var vecLayer = null, cityLayer = null, shadeLayer = null;
 function buildBaseLayers() {
-  baseLayers.map = tl(TILE[S.mapStyle] || TILE.osm);
-  baseLayers.sat = L.layerGroup([tl(TILE.sat)]);
+  baseLayers.map = S.mapStyle === 'usgstopo' ? OFFLINE.layer('usgstopo') : tl(TILE[S.mapStyle] || TILE.osm);
+  baseLayers.sat = L.layerGroup([S.satSrc === 'usgsimg' ? OFFLINE.layer('usgsimg') : tl(TILE.sat)]);
   if (S.satLabels) baseLayers.sat.addLayer(tl(TILE.satlbl, { pane: 'overlayPane', opacity: 0.9 }));
-  shadeLayer = makeShadeLayer();
-  baseLayers.flat = L.layerGroup([shadeLayer]);
+  var th = TH();
+  shadeLayer = th.fill ? (S.flatRelief ? makeShadeLayer(true) : null) : makeShadeLayer(false);
+  baseLayers.flat = L.layerGroup(th.fill ? [landLayer()].concat(shadeLayer ? [shadeLayer] : []) : [shadeLayer]);
   if (S.customTiles) baseLayers.custom = L.tileLayer(S.customTiles, { maxZoom: 20, attribution: 'custom' });
 }
 function setBase(b) {
@@ -213,22 +256,28 @@ function setBase(b) {
 }
 function cycleBase() { var order = ['map', 'sat', 'flat']; setBase(order[(order.indexOf(S.base) + 1) % 3]); }
 
-function TH() {
-  if (S.flatTheme === 'light') return { bg: '#f2f2ee', ocean: [196, 214, 228], land: null, coast: '#245', lakes: '#356', borders: '#000', states: '#555', light: true, dot: '#b00' };
-  // default: original grey hillshade terrain with a near-black ocean
-  return { bg: '#04060c', ocean: [4, 6, 14], land: null, coast: '#7fb6e6', lakes: '#3d6f99', borders: '#ffffff', states: '#b9b9b9', light: false, dot: '#ffd166' };
-}
-/* Contrast basemap: hillshade computed in-browser from the same DEM tiles used for propagation. */
-function makeShadeLayer() {
+/* Contrast-map themes. Themes with `fill` draw Natural Earth land polygons (works offline everywhere) with an
+   optional relief overlay computed from the terrain tiles; `gray` draws the opaque hillshade instead. */
+var THEMES = {
+  outline: { name: 'Outline (dark slate, orange edges)', bg: '#091119', fill: '#1A2633', lake: '#0B1520', coast: '#FF6B2C', borders: '#FF6B2C', states: '#9A5A38', w: [1.4, 1.4, 1], relief: [0.38, 0.10, [255, 255, 255]], label: '#E0E8EF', halo: '#091119', dot: '#3CC6E6' },
+  gray: { name: 'Grey relief (bold orange edges)', bg: '#04060c', ocean: [4, 6, 14], fill: null, lake: null, coast: '#E8590C', borders: '#E8590C', states: '#C8C8C8', w: [2.6, 2.2, 1], label: '#ffffff', halo: '#000000', dot: '#ffd166' },
+  night: { name: 'Night (amber, dark-adapted)', bg: '#000000', fill: '#140904', lake: '#000000', coast: '#FF8F2A', borders: '#FFB04D', states: '#7A4A1A', relief: [0.45, 0.22, [255, 150, 40]], label: '#FFB04D', halo: '#000000', dot: '#FF8F2A' },
+  hivis: { name: 'High visibility (yellow on black)', bg: '#001A4D', fill: '#000000', lake: '#001A4D', coast: '#FFFF00', borders: '#FFFFFF', states: '#FFFF00', relief: [0.0, 0.18, [255, 255, 255]], label: '#FFFF00', halo: '#000000', dot: '#FFFF00', heavy: true }
+};
+function TH() { return THEMES[S.flatTheme] || THEMES.outline; }
+function hexRGB(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
+/* Contrast basemap: hillshade computed in-browser from the same DEM tiles used for propagation.
+   overlay = true → transparent relief (shadows/highlights over the land fill); false → opaque grey hillshade */
+function makeShadeLayer(overlay) {
   var Shade = L.GridLayer.extend({
     createTile: function (c, done) {
       var cv = document.createElement('canvas'); cv.width = cv.height = 256;
       var z = c.z, zd = Math.min(z, 12), sc = Math.pow(2, z - zd);
       var tx = Math.floor(c.x / sc), ty = Math.floor(c.y / sc);
-      var th = TH(), dark = !th.light;
+      var th = TH(), ocean = th.ocean || hexRGB(th.bg);
       var g = cv.getContext('2d');
-      g.fillStyle = th.bg; g.fillRect(0, 0, 256, 256);
-      if (zd < 2 || !DEM.cfg.useTiles) { setTimeout(function () { done(null, cv); }, 0); return cv; }
+      if (!overlay) { g.fillStyle = th.bg; g.fillRect(0, 0, 256, 256); }
+      if (zd < 2 || !DEM.cfg.useTiles && !overlay) { setTimeout(function () { done(null, cv); }, 0); return cv; }
       DEM.loadTile(zd, tx, ty).then(function (arr) {
         if (!arr) { done(null, cv); return; }
         var img = g.createImageData(256, 256), d = img.data;
@@ -236,17 +285,22 @@ function makeShadeLayer() {
         var n2 = Math.pow(2, z), lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (c.y + 0.5) / n2))) * R2D;
         var cell = 156543.03 * Math.cos(lat * D2R) / n2, zf = z < 7 ? 6 : z < 10 ? 3 : 1.6;
         function E(px, py) { var x = clamp(Math.floor(ox + px / sc), 0, 255), y = clamp(Math.floor(oy + py / sc), 0, 255); return arr[y * 256 + x]; }
-        var az = 315 * D2R, alt = 45 * D2R;
+        var az = 315 * D2R, alt = 45 * D2R, rl = th.relief || [0, 0, [255, 255, 255]];
         for (var py = 0; py < 256; py++) for (var px = 0; px < 256; px++) {
           var e = E(px, py), i = (py * 256 + px) * 4;
           var dzdx = (E(px + 1, py) - E(px - 1, py)) / (2 * cell) * zf, dzdy = (E(px, py + 1) - E(px, py - 1)) / (2 * cell) * zf;
           var slope = Math.atan(Math.hypot(dzdx, dzdy)), aspect = Math.atan2(dzdy, -dzdx);
-          var hs = Math.cos(alt) * Math.cos(slope) + Math.sin(alt) * Math.sin(slope) * Math.cos(az - Math.PI / 2 - aspect);
-          hs = clamp(hs, 0, 1);
-          var v;
-          if (e <= 0 && Math.abs(dzdx) + Math.abs(dzdy) < 0.02 * zf || e < -5) { d[i] = th.ocean[0]; d[i + 1] = th.ocean[1]; d[i + 2] = th.ocean[2]; d[i + 3] = 255; continue; }
-          if (th.land) { var f = 0.9 + 0.2 * hs; d[i] = clamp(th.land[0] * f, 0, 255); d[i + 1] = clamp(th.land[1] * f, 0, 255); d[i + 2] = clamp(th.land[2] * f, 0, 255); d[i + 3] = 255; continue; }
-          v = dark ? 18 + hs * 175 + Math.min(e / 4000, 1) * 40 : 255 - (1 - hs) * 190 - Math.min(e / 4000, 1) * 30;
+          var hs = clamp(Math.cos(alt) * Math.cos(slope) + Math.sin(alt) * Math.sin(slope) * Math.cos(az - Math.PI / 2 - aspect), 0, 1);
+          var sea = e <= 0 && Math.abs(dzdx) + Math.abs(dzdy) < 0.02 * zf || e < -5;
+          if (overlay) { // shadows darken, sunlit slopes take the theme tint; sea and flat land stay transparent
+            if (sea) continue;
+            var a = 0.707 - hs;
+            if (a > 0) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = clamp(a / 0.707 * rl[0] * 255, 0, 255); }
+            else { d[i] = rl[2][0]; d[i + 1] = rl[2][1]; d[i + 2] = rl[2][2]; d[i + 3] = clamp(-a / 0.293 * rl[1] * 255, 0, 255); }
+            continue;
+          }
+          if (sea) { d[i] = ocean[0]; d[i + 1] = ocean[1]; d[i + 2] = ocean[2]; d[i + 3] = 255; continue; }
+          var v = 18 + hs * 175 + Math.min(e / 4000, 1) * 40;
           d[i] = d[i + 1] = d[i + 2] = clamp(v, 0, 255); d[i + 3] = 255;
         }
         g.putImageData(img, 0, 0);
@@ -255,7 +309,16 @@ function makeShadeLayer() {
       return cv;
     }
   });
-  return new Shade({ maxZoom: 20, attribution: 'Hillshade from AWS Terrain Tiles (SRTM/NED/GMTED); boundaries & places © Natural Earth' });
+  return new Shade({ maxZoom: 20, pane: overlay ? 'reliefPane' : 'tilePane', attribution: 'Relief from AWS Terrain Tiles (SRTM/NED/GMTED); land, boundaries & places © Natural Earth' });
+}
+var landLL = null;
+function landLayer() {
+  var th = TH(), rnd2 = L.canvas({ pane: 'landPane', padding: 0.2 }), g = L.layerGroup();
+  if (!DATA.basemap || !DATA.basemap.land) return g;
+  if (!landLL) landLL = DATA.basemap.land.map(function (poly) { return poly.map(function (r) { var o = []; for (var i = 0; i < r.length; i += 2) o.push([r[i + 1], r[i]]); return o; }); });
+  g.addLayer(L.polygon(landLL, { renderer: rnd2, pane: 'landPane', stroke: false, fillColor: th.fill, fillOpacity: 1, interactive: false, smoothFactor: 1 }));
+  if (th.lake && DATA.basemap.lakes) g.addLayer(L.polygon(DATA.basemap.lakes.map(function (r) { var o = []; for (var i = 0; i < r.length; i += 2) o.push([r[i + 1], r[i]]); return [o]; }), { renderer: rnd2, pane: 'landPane', stroke: false, fillColor: th.lake, fillOpacity: 1, interactive: false }));
+  return g;
 }
 function refreshVectors() {
   if (vecLayer) { map.removeLayer(vecLayer); vecLayer = null; }
@@ -265,23 +328,24 @@ function refreshVectors() {
     var lines = arrs.map(function (a) { var o = []; for (var i = 0; i < a.length; i += 2) o.push([a[i + 1], a[i]]); return o; });
     g.addLayer(L.polyline(lines, { color: color, weight: w, dashArray: dash, renderer: L.canvas({ pane: 'vecPane' }), interactive: false, smoothFactor: 1.5, pane: 'vecPane' }));
   }
-  mk(DATA.basemap.coast, th.coast, 1.2);
-  mk(DATA.basemap.lakes, th.lakes, 0.8);
-  mk(DATA.basemap.borders, th.borders, 1.4);
-  mk(DATA.basemap.states, th.states, 0.8, '4 3');
+  var hw = th.heavy ? 1.7 : 1, w = th.w || [1.1 * hw, 1.3 * hw, 1 * hw];   // line weights: [coast, country borders, states]
+  mk(DATA.basemap.coast, th.coast, w[0]);
+  if (!th.fill) mk(DATA.basemap.lakes, th.coast, Math.max(0.8, w[0] * 0.6));
+  mk(DATA.basemap.borders, th.borders, w[1]);
+  mk(DATA.basemap.states, th.states, w[2], '4 3');
   vecLayer = g.addTo(map);
 }
 function refreshCities() {
   if (!cityLayer) { cityLayer = L.layerGroup().addTo(map); map.on('moveend', refreshCities); }
   cityLayer.clearLayers();
   if (!DATA.cities || !S.layers.cities || S.base !== 'flat') return;
-  var b = map.getBounds().pad(0.05), z = map.getZoom(), lim = z < 5 ? 25 : z < 7 ? 60 : z < 9 ? 110 : 160, n = 0, th = TH(), dark = !th.light;
+  var b = map.getBounds().pad(0.05), z = map.getZoom(), lim = z < 5 ? 25 : z < 7 ? 60 : z < 9 ? 110 : 160, n = 0, th = TH();
   for (var i = 0; i < DATA.cities.length && n < lim; i++) {
     var c = DATA.cities[i];
     if (!b.contains([c[1], c[2]])) continue;
     n++;
     var fs = c[3] > 3e6 ? 13 : c[3] > 5e5 ? 12 : 11;
-    cityLayer.addLayer(L.marker([c[1], c[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<div class="citylbl' + (dark ? '' : ' light') + '" style="font-size:' + fs + 'px;transform:translate(-3px,-7px)"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:' + th.dot + ';margin-right:4px;vertical-align:middle"></span>' + esc(c[0]) + '</div>' }) }));
+    cityLayer.addLayer(L.marker([c[1], c[2]], { interactive: false, keyboard: false, icon: L.divIcon({ className: '', iconSize: [0, 0], html: '<div class="citylbl" style="font-size:' + fs + 'px;transform:translate(-3px,-7px);color:' + th.label + ';text-shadow:0 0 3px ' + th.halo + ',0 0 3px ' + th.halo + ',0 0 2px ' + th.halo + '"><span style="display:inline-block;width:5px;height:5px;border-radius:50%;background:' + th.dot + ';margin-right:4px;vertical-align:middle"></span>' + esc(c[0]) + '</div>' }) }));
   }
 }
 
@@ -316,7 +380,7 @@ function setSite(k, lat, lon, name) {
 function clearSites() {
   S.tx.placed = false; S.rx.placed = false; saveState(); placeMarkers();
   if (RF.last || COV.cur) OPS.markStale(true);
-  log('Tx/Rx markers cleared — place new sites with 📍 Tx / 📍 Rx (no terrain is loaded until you run an analysis).');
+  log('Tx/Rx markers cleared — place new sites with the Tx / Rx map buttons (no terrain is loaded until you run an analysis).');
 }
 function syncSiteInputs() {
   document.querySelectorAll('[data-k^="tx."],[data-k^="rx."]').forEach(function (inp) { var v = getK(inp.dataset.k); if (inp.type === 'checkbox') return; inp.value = inp.dataset.u === 'h' ? +hU(v).toFixed(2) : v; });
@@ -353,6 +417,8 @@ var ICONS = {
   _mcs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16M15 4v16"/></svg>',
   tp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/></svg>',
   terrain: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="m2 20 7-12 4 6 3-4 6 10z"/></svg>',
+  offline: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14v5a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5"/></svg>',
+  los: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
   help: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .9-1 1.6v.6M12 17h.01"/></svg>'
 };
 function panel(id, title, render, after) { PANELS.push({ id: id, title: title, render: render, after: after }); }
@@ -369,6 +435,7 @@ function showPanel(id) {
   $('pbody').innerHTML = p.render();
   bind($('pbody'));
   if (p.after) p.after($('pbody'));
+  applyIcons($('pbody'));
 }
 function rerender() { if (curPanel) { var st = $('pbody').scrollTop; var opens = Array.prototype.map.call(document.querySelectorAll('#pbody details.acc'), function (d) { return d.open; }); showPanel(curPanel); document.querySelectorAll('#pbody details.acc').forEach(function (d, i) { if (opens[i] !== undefined) d.open = opens[i]; }); $('pbody').scrollTop = st; } }
 

@@ -87,7 +87,20 @@ def basemap():
                     flat += [round(x, 3), round(y, 3)]
                 res.append(flat)
         return res
-    dump('basemap.json', {'coast': lines('ne_50m_coastline.geojson'), 'states': lines('ne_50m_admin_1_states_provinces_lines.geojson'),
+    def polys(fn):  # [[outer ring, hole, ...], ...] with flat [lon, lat, ...] rings
+        g = json.loads(get(NE + fn)); res = []
+        for f in g['features']:
+            geom = f['geometry']; cs = geom['coordinates']
+            for poly in (cs if geom['type'] == 'MultiPolygon' else [cs]):
+                rings = []
+                for ring in poly:
+                    flat = []
+                    for x, y in ring:
+                        flat += [round(x, 3), round(y, 3)]
+                    rings.append(flat)
+                res.append(rings)
+        return res
+    dump('basemap.json', {'land': polys('ne_50m_land.geojson'), 'coast': lines('ne_50m_coastline.geojson'), 'states': lines('ne_50m_admin_1_states_provinces_lines.geojson'),
                           'borders': lines('ne_50m_admin_0_boundary_lines_land.geojson'), 'lakes': lines('ne_50m_lakes.geojson')})
 
 

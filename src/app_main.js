@@ -9,7 +9,7 @@ function renderTerrain() {
   h += F('Path-profile zoom', 'p2pZ', { sel: [[11, 'z11 (~60 m)'], [12, 'z12 (~30 m, SRTM 1″)'], [13, 'z13 (~15 m, NED where available)'], [14, 'z14 (~8 m, 3DEP where available)']], num: 1 });
   h += '<div class="f"><label>Terrain tile URL</label><input id="tUrl" value="' + esc(DEM.cfg.url) + '"></div><div class="note">Any Terrarium-encoded PNG source works (e.g. a local tile server for air-gapped use).</div>';
   h += '<div class="row"><button class="btn sm" id="tHgt">Load SRTM .hgt / .zip</button><button class="btn sm" id="tPre">Pre-cache view for offline</button><button class="btn sm" id="tClrM">Clear memory</button><button class="btn sm" id="tClrI">Clear offline cache</button></div>';
-  if (hl.length) h += '<table class="t">' + hl.map(function (x, i) { return '<tr><td>' + esc(x.name) + '</td><td>' + x.lat + ', ' + x.lon + '</td><td>' + (x.n === 3601 ? '1″' : x.n === 1201 ? '3″' : x.n) + '</td><td><a class="lnk" onclick="DEM.removeHGT(' + i + ');rerender()">✕</a></td></tr>'; }).join('') + '</table>';
+  if (hl.length) h += '<table class="t">' + hl.map(function (x, i) { return '<tr><td>' + esc(x.name) + '</td><td>' + x.lat + ', ' + x.lon + '</td><td>' + (x.n === 3601 ? '1″' : x.n === 1201 ? '3″' : x.n) + '</td><td><a class="lnk" onclick="DEM.removeHGT(' + i + ');rerender()" title="Remove">' + ico('close') + '</a></td></tr>'; }).join('') + '</table>';
   h += '<h4>Units & behaviour</h4><div class="row">Heights: <div class="seg" id="unitSeg2"><button data-u="m" class="' + (S.units.h === 'm' ? 'on' : '') + '">metres</button><button data-u="ft" class="' + (S.units.h === 'ft' ? 'on' : '') + '">feet</button></div></div>';
   h += '<div class="row"><button class="btn sm" id="resetAll">Reset all settings</button></div>';
   return h;
@@ -53,12 +53,14 @@ function setUnits(u) {
 }
 function renderHelp() {
   return '<div style="display:flex;align-items:center;gap:12px"><div style="width:72px;height:72px">'+MASCOT_SVG+'</div><div><h3 style="margin:0">Signal Monkee — quick guide</h3><div class="mini">Mascot: Signal Monkee, ears up and listening</div></div></div>' +
-    '<div class="card"><b>Placing sites</b><br>Use 📍 Tx / 📍 Rx (or drag the markers, or type coordinates). Placing or moving sites never downloads terrain — data is pulled only when you press ▶ Path or ▶ Coverage. 🧹 Clear ▾ removes results, the Tx/Rx markers, or both.</div>' +
-    '<div class="card"><b>Point-to-point (SPLAT! path mode)</b><br>Drag the Tx/Rx markers or use 📍 buttons, then ▶ Path (P). You get the terrain profile with earth curvature (k from N0), first/60% Fresnel zones, obstruction list, antenna-height requirements, ITM/P.526/FSPL/Hata losses and the full link budget Hover the profile to trace the point on the map.</div>' +
-    '<div class="card"><b>Area coverage (SPLAT! -c / -L)</b><br>▶ Coverage (C) sweeps radials from the Tx (multi-threaded). Display modes: dBm, path loss, dBµV/m, SNR, margin, LOS, GNSS J/S. Change power/gain/display without recomputing. “Keep as layer” to overlay several sites.</div>' +
+    '<div class="card"><b>Operator vs Engineer</b><br><b>Operator</b> is a one-page line-of-sight check for pilots and field users: set the two ends, frequency, power, antenna gains and a minimum RSSI. It answers “can they see each other over the terrain, and is the signal strong enough?” using free-space loss and isotropic antennas — PASS needs clear line of sight and RSSI ≥ minimum. <b>Engineer</b> adds the propagation models (Longley-Rice, P.526, Hata), Fresnel zones, antenna patterns, feeder and fade margins.</div>' +
+    '<div class="card"><b>LOS planning</b><br>Terrain-only line of sight, with no radio settings: check whether two points can see each other (with the altitude needed if not), or map everywhere a target at a chosen height can see point A (viewshed). Available in both modes.</div>' +
+    '<div class="card"><b>Placing sites</b><br>Use the Tx / Rx map buttons (or drag the markers, or type coordinates). Placing or moving sites never downloads terrain — data is pulled only when you press Path or Coverage. Clear ▾ removes results, the Tx/Rx markers, or both.</div>' +
+    '<div class="card"><b>Point-to-point (SPLAT! path mode)</b><br>Drag the Tx/Rx markers or use the Tx/Rx map buttons, then Path (P). You get the terrain profile with earth curvature (k from N0), first/60% Fresnel zones, obstruction list, antenna-height requirements, ITM/P.526/FSPL/Hata losses and the full link budget Hover the profile to trace the point on the map.</div>' +
+    '<div class="card"><b>Area coverage (SPLAT! -c / -L)</b><br>Coverage (C) sweeps radials from the Tx (multi-threaded). Display modes: dBm, path loss, dBµV/m, SNR, margin, LOS. Change power/gain/display without recomputing. “Keep as layer” to overlay several sites.</div>' +
     '<div class="card"><b>Aviation</b><br>Towers, airports, ARTCC centers and navaids with clickable frequencies. Airband panel: ICAO lookup, towered fields near a point, reverse frequency finder, and an air-ground preset (Rx at altitude MSL).</div>' +
     '<div class="card"><b>Repeaters & Meshtastic</b><br>Layers panel fetches RepeaterBook, BrandMeister and Meshtastic map data (or import saved JSON/CSV). Any site popup → “Coverage from here”.</div>' +
-    '<div class="card"><b>GNSS & SATCOM</b><br>Fetch TLEs (CelesTrak) → sky plot with terrain horizon, multi-GNSS DOP, 24 h timeline, terrain-masked PDOP grid, L1 jammer J/S denial map. SATCOM: GEO look angles & footprints (Inmarsat, ViaSat…), LEO visibility/availability (Iridium, Starlink, OneWeb, Globalstar).</div>' +
+    '<div class="card"><b>GNSS & SATCOM</b><br>Fetch TLEs (CelesTrak) → sky plot with terrain horizon, multi-GNSS DOP, 24 h timeline, terrain-masked PDOP grid. SATCOM: GEO look angles & footprints (Inmarsat, ViaSat…), LEO visibility/availability (Iridium, Starlink, OneWeb, Globalstar).</div>' +
     '<div class="card"><b>Keys</b><br>P path · C coverage · T/R pick Tx/Rx · A add test point · G GNSS point · B cycle basemap · Esc cancel pick · right-click map for context menu.</div>' +
     '<div class="note">Model notes: ITM is a faithful port of NTIA/ITS ITM v1.4 (validated against the C++ reference). Valid 20 MHz–20 GHz, terminal heights 0.5–3000 m; above 3 km (aircraft) the engine switches to geometric LOS + ITU-R P.526 Deygout diffraction. Terrain is bare earth — add clutter loss for vegetation/buildings. Frequencies, repeater and satellite data are informational; verify against official sources before operational use.</div>' +
     '<div class="note">Data: OurAirports (public domain), Natural Earth, AWS Terrain Tiles, CelesTrak, RepeaterBook, BrandMeister, meshmap.net, gpsjam.org. Libraries: Leaflet (BSD-2), satellite.js (MIT), h3-js (Apache-2.0).</div>';
@@ -66,18 +68,21 @@ function renderHelp() {
 
 /* ---------- register panels ---------- */
 panel('rf', 'RF Link', RF.render, RF.after);
+panel('los', 'LOS planning', LOSP.render, LOSP.after);
 panel('layers', 'Layers', function () { return LAY.renderLayers(); }, function () { LAY.afterLayers(); });
 panel('air', 'Airband ATC', function () { return LAY.renderAir(); }, function () { LAY.afterAir(); });
 panel('gnss', 'GNSS', function () { return SAT.renderGnss(); }, function () { SAT.afterGnss(); });
 panel('sat', 'SATCOM', function () { return SAT.renderSat(); }, function () { SAT.afterSat(); });
 panel('tp', 'Test points', TP.render);
 panel('terrain', 'Terrain', renderTerrain, afterTerrain);
+panel('offline', 'Offline data', OFFLINE.render, OFFLINE.after);
 panel('help', 'Help', renderHelp);
 
 /* ---------- boot ---------- */
 function boot() {
   try { var dc = JSON.parse(localStorage.getItem('pathlink.dem') || 'null'); if (dc) Object.assign(DEM.cfg, dc); } catch (e) { }
   buildRail();
+  applyIcons(document);
   initMap();
   initDrawer();
   RF.initProfileHover();
@@ -92,6 +97,8 @@ function boot() {
   $('clrMenu').onclick = function (e) { var b = e.target.closest('button'); if (!b) return; $('clrMenu').classList.add('hidden'); if (b.dataset.c !== 'sites') OPS.clearResults(); if (b.dataset.c !== 'res') clearSites(); if (b.dataset.c === 'all') { SAT.clearPoint(); if (curPanel === 'gnss' || curPanel === 'sat') rerender(); } };
   document.addEventListener('click', function (e) { if (!e.target.closest('#clrMenu')) $('clrMenu').classList.add('hidden'); });
   $('dlPdf').onclick = OPS.pdf;
+  $('modeSeg').onclick = function (e) { var b = e.target.closest('button'); if (b) OPMODE.setMode(b.dataset.m); };
+  OPMODE.applyChrome();
   $('bSave').onclick = PROJ.save; $('bLoad').onclick = PROJ.load;
   $('pickTx').onclick = function () { setPick('tx'); }; $('pickRx').onclick = function () { setPick('rx'); };
   $('pickTp').onclick = function () { setPick('tp'); }; $('pickGn').onclick = function () { setPick('gn'); };

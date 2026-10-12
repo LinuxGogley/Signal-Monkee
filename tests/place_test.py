@@ -22,7 +22,7 @@ with sync_playwright() as p:
     print('terrain requests after Path:', cnt['t']-t0)
     pg.evaluate("setSite('rx',36.2,-120.5)"); time.sleep(.3); print('stale bar:', pg.evaluate("$('staleBar').style.display"), 'requests:', cnt['t']-t0)
     pg.screenshot(path=OUT+'/27_stale.png')
-    pg.click('#staleBar >> text=▶ Path'); pg.wait_for_function("$('staleBar').style.display==='none' && document.getElementById('statusTxt').textContent==='ready'",timeout=60000); print('stale cleared after run')
+    pg.click('#staleBar >> text=Re-run path'); pg.wait_for_function("$('staleBar').style.display==='none' && document.getElementById('statusTxt').textContent==='ready'",timeout=60000); print('stale cleared after run')
     pg.evaluate("S.f=4400;S.rx.mode='msl';S.rx.h=10000;saveState()"); pg.click('#bP2P'); pg.wait_for_function("RF.last && RF.last.hrx>3000 && document.getElementById('statusTxt').textContent==='ready'",timeout=60000); time.sleep(.4)
     pg.screenshot(path=OUT+'/27_air.png',clip={'x':410,'y':660,'width':1190,'height':300})
     pg.evaluate("S.rx.mode='agl';S.rx.h=2;S.f=446;saveState()"); pg.click('#bP2P'); pg.wait_for_function("RF.last && RF.last.hrx<10 && document.getElementById('statusTxt').textContent==='ready'",timeout=60000); time.sleep(.4)

@@ -16,8 +16,15 @@ var COV = (function () {
   function hsl2rgb(h, s, l) { var c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2, r, g, b; if (h < 60) { r = c; g = x; b = 0; } else if (h < 120) { r = x; g = c; b = 0; } else if (h < 180) { r = 0; g = c; b = x; } else if (h < 240) { r = 0; g = x; b = c; } else { r = x; g = 0; b = c; } return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)]; }
   var MCS_COLORS = [[49, 54, 149], [69, 117, 180], [116, 173, 209], [171, 217, 233], [224, 243, 248], [254, 224, 144], [253, 174, 97], [244, 109, 67], [215, 48, 39], [165, 0, 38], [120, 0, 60], [80, 0, 80]];
 
+  /* effective display settings: Operator mode uses a fixed, simple scale starting at the minimum RSSI */
+  function CC() {
+    if (cur && cur.losOnly) return Object.assign({}, S.cov, { display: 'los', showBelow: !!S.los.showHidden });
+    if (!OPM()) return S.cov;
+    var mr = Math.round(+S.op.minRssi || -100);
+    return Object.assign({}, S.cov, { display: S.op.covDisplay === 'los' ? 'los' : 'dbm', bottom: mr, top: mr + 60, step: 6, palette: 'rainbow', showBelow: false });
+  }
   var K = null;
-  function prepK() { K = { spec: RF.antSpec(), base: RF.txdBm() - S.txLoss + S.txGain + S.rxGain - S.rxLoss, eirp: RF.eirp(), noise: RF.noise(), sens: RF.sens(), clutter: +S.clutterDb || 0, f20: 20 * Math.log10(S.f), gs: +S.cov.gnssSig }; return K; }
+  function prepK() { K = { spec: RF.antSpec(), base: RF.rxBase(), eirp: RF.eirp(), noise: RF.noise(), sens: RF.sens(), clutter: OPM() ? 0 : +S.clutterDb || 0, f20: 20 * Math.log10(S.f) }; return K; }
   /* value transform for display mode; returns NaN to hide */
   function displayValue(lossDb, elAng, az, losFlag, mode) {
     if (mode === 'los') return losFlag ? 1 : 0;
@@ -31,15 +38,13 @@ var COV = (function () {
       case 'field': return K.eirp + pat - L + K.f20 + 77.2;
       case 'snr': return prx - K.noise;
       case 'margin': return prx - K.sens;
-      case 'js': return prx - K.gs;
       default: return prx;
     }
   }
   function colorFor(v, mode) {
     if (!isFinite(v)) return null;
-    var c = S.cov;
+    var c = CC();
     if (mode === 'los') return v ? [47, 224, 122, 200] : (c.showBelow ? [229, 72, 77, 140] : null);
-    if (mode === 'js') { var thr = +c.jsThr; if (v < thr - 20) return c.showBelow ? [60, 60, 60, 80] : null; var tt = clamp((v - (thr - 20)) / 40, 0, 1); var cc = v >= thr ? lerpStops([[255, 200, 0], [255, 60, 0], [160, 0, 0]], clamp((v - thr) / 30, 0, 1)) : [80, 160, 255]; return [cc[0], cc[1], cc[2], v >= thr ? 230 : 110]; }
     var top = +c.top, bot = +c.bottom, step = +c.step || 1, invert = mode === 'loss';
     if (!K) prepK();
     if (mode === 'margin' || mode === 'snr') { top = 40; bot = mode === 'margin' ? 0 : K.sens - K.noise; }
@@ -55,11 +60,15 @@ var COV = (function () {
     return [col[0], col[1], col[2], a];
   }
 
+  var lastOpt = {};
+  function rerun() { return run(lastOpt); }
+  /* opt.losOnly: terrain-only viewshed (LOS planning panel) — no radio settings, own radius/height/earth curvature */
   function run(opt) {
     if (running) { log('Coverage already running…', 'w'); return Promise.resolve(); }
-    opt = opt || {};
-    if (!S.tx.placed) { log('Place the Tx site first (📍 Tx).', 'w'); return Promise.resolve(); }
-    var tx = Object.assign({}, S.tx), R = (+S.cov.radius) * 1000;
+    opt = opt || {}; lastOpt = opt;
+    var lo = !!opt.losOnly, src = lo ? S.los : S.cov;
+    if (!S.tx.placed) { log('Place the Tx site first (Tx button on the map).', 'w'); return Promise.resolve(); }
+    var tx = Object.assign({}, S.tx), R = (+src.radius) * 1000;
     if (!(R > 100)) { log('Set a coverage radius.', 'e'); return Promise.resolve(); }
     running = true; status('coverage…');
     var n = PC.dest(tx.lat, tx.lon, 0, R)[0], s = PC.dest(tx.lat, tx.lon, 180, R)[0];
@@ -68,7 +77,7 @@ var COV = (function () {
     prog(true, 'Loading terrain…', 0);
     var t0 = performance.now();
     return DEM.ensure(s, w, n, e, z, function (d, t) { prog(true, 'Loading terrain tiles ' + d + '/' + t + ' (z' + z + ')', d / t * 0.3); }).then(function (failed) {
-      if (failed) log(failed + ' terrain tiles unavailable (treated as 0 m).', 'w');
+      if (failed) log(failed + ' terrain tiles unavailable (no internet, or outside the imported offline area) — treated as 0 m.', 'w');
       var res = Math.max(DEM.resolution(tx.lat), 10);
       var L = clamp(Math.round(R / res), 40, +S.cov.maxSteps || 500), xi = R / L;
       var rays = +S.cov.rays > 0 ? +S.cov.rays : clamp(Math.round(2 * Math.PI * L * 0.9), 360, 3600);
@@ -88,13 +97,13 @@ var COV = (function () {
         }
         if (miss) log(miss + ' samples lacked terrain.', 'w');
         var hs = 0; for (var i = 0; i < elev.length; i += 7) hs += elev[i]; hs /= Math.ceil(elev.length / 7);
-        var opts = { model: S.model, f: S.f, htx: tx.h, hrx: +S.cov.rxH, rxMode: S.cov.rxMode, ae: RF.effEarth(hs), itm: RF.itmOpts(), hataEnv: +S.hataEnv };
-        if (S.cov.display === 'los') opts.model = 'los';
+        var opts = { model: S.model, f: S.f, htx: tx.h, hrx: +src.rxH, rxMode: src.rxMode, ae: lo ? RF.losEarth() : RF.effEarth(hs), itm: RF.itmOpts(), hataEnv: +S.hataEnv };
+        if (lo || OPM() || S.cov.display === 'los') opts.model = 'los';
         return compute(elev, rays, L, xi, opts, t0).then(function (out) {
-          cur = { tx: tx, R: R, L: L, rays: rays, xi: xi, loss: out.loss, elAng: out.elAng, los: out.los, opts: opts, bounds: [[s, w], [n, e]], f: S.f, model: opts.model };
+          cur = { tx: tx, R: R, L: L, rays: rays, xi: xi, loss: out.loss, elAng: out.elAng, los: out.los, opts: opts, bounds: [[s, w], [n, e]], f: S.f, model: lo ? 'los' : OPM() ? 'oplos' : opts.model, op: OPM(), losOnly: lo };
           paint.logNext = true; paint(); OPS.markStale(false);
           var dt = (performance.now() - t0) / 1000;
-          log('Coverage: ' + rays + ' radials × ' + L + ' steps (' + fx(xi, 0) + ' m), ' + RF.modelName(opts.model) + ', ' + fx(dt, 1) + ' s', 'g');
+          log((lo ? 'Viewshed: ' : 'Coverage: ') + rays + ' radials × ' + L + ' steps (' + fx(xi, 0) + ' m), ' + RF.modelName(opts.model) + ', ' + fx(dt, 1) + ' s', 'g');
           RF.logBudget();
           running = false; status('ready'); prog(false);
         });
@@ -160,7 +169,7 @@ var COV = (function () {
     var dxm = PC.dist(c.tx.lat, w, c.tx.lat, e), dym = PC.dist(s, c.tx.lon, n, c.tx.lon);
     var W = Math.round(clamp(maxDim || Math.min(2 * c.L * 1.2, 1800), 200, 4000)), H = Math.round(W * dym / dxm);
     var cv = document.createElement('canvas'); cv.width = W; cv.height = H;
-    var g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data, mode = S.cov.display;
+    var g = cv.getContext('2d'), img = g.createImageData(W, H), d = img.data, mode = CC().display;
     prepK();
     var p1 = c.tx.lat * D2R, cp1 = Math.cos(p1), sp1 = Math.sin(p1);
     for (var y = 0; y < H; y++) {
@@ -192,12 +201,11 @@ var COV = (function () {
     legend(); stats(paint.logNext); paint.logNext = false;
   }
   function legend() {
-    var mode = S.cov.display, el = $('legend'), h = ''; prepK();
+    var mode = CC().display, el = $('legend'), h = ''; prepK();
     if (!cur) { el.innerHTML = ''; return; }
-    var c = S.cov, unit = { dbm: 'dBm', loss: 'dB loss', field: 'dBµV/m', snr: 'SNR dB', margin: 'margin dB', js: 'J/S dB', los: 'LOS' }[mode];
+    var c = CC(), unit = cur.losOnly ? 'Viewshed' : { dbm: 'dBm', loss: 'dB loss', field: 'dBµV/m', snr: 'SNR dB', margin: 'margin dB', los: 'LOS' }[mode];
     h += '<div class="lgt">' + unit + '</div><div class="lg">';
-    if (mode === 'los') h += '<div style="background:#2fe07a">LOS</div><div style="background:#e5484d;color:#fff">NLOS</div>';
-    else if (mode === 'js') { var thr = +c.jsThr; [thr + 30, thr + 20, thr + 10, thr, thr - 10].forEach(function (v) { var col = colorFor(v + 0.01, 'js'); h += '<div style="background:rgba(' + col.slice(0, 3) + ',1)">' + (v >= thr ? 'denied ' : '') + fx(v, 0) + '</div>'; }); }
+    if (mode === 'los') h += cur.losOnly ? '<div style="background:#2fe07a">Visible</div>' + (c.showBelow ? '<div style="background:#e5484d;color:#fff">Hidden</div>' : '') : '<div style="background:#2fe07a">LOS</div><div style="background:#e5484d;color:#fff">NLOS</div>';
     else {
       var top = +c.top, bot = +c.bottom, step = +c.step || 4;
       if (mode === 'margin' || mode === 'snr') { top = 40; bot = mode === 'margin' ? 0 : RF.sens() - RF.noise(); }
@@ -224,20 +232,25 @@ var COV = (function () {
       bins.forEach(function (b, j) { if (prx >= b) binA[j] += w; });
     }
     var area = Math.PI * c.R * c.R / 1e6;
+    if (c.losOnly) {
+      $('infoTab').innerHTML = '<h3 style="margin:0 0 8px">Viewshed statistics</h3><div class="kv"><span>From</span><b>' + esc(c.tx.name) + ', antenna ' + hShort(c.tx.h) + ' AGL</b><span>Target height</span><b>' + hShort(c.opts.hrx) + ' ' + (c.opts.rxMode === 'msl' ? 'MSL' : 'AGL') + '</b><span>Radius</span><b>' + fx(c.R / 1000, 1) + ' km / ' + fx(c.R / 1852, 1) + ' NM</b><span>Visible area</span><b>' + fx(los / tot * 100, 1) + '% (' + fx(los / tot * area, 0) + ' km²)</b></div>';
+      if (logIt) log('Viewshed: ' + fx(los / tot * 100, 1) + '% of ' + fx(area, 0) + ' km² visible from ' + c.tx.name);
+      return;
+    }
     var h = '<div class="kv"><span>Site</span><b>' + esc(c.tx.name) + ' (' + fx(c.tx.lat, 5) + ', ' + fx(c.tx.lon, 5) + '), ' + hShort(c.tx.h) + ' AGL</b><span>Frequency / model</span><b>' + fx(c.f, 4) + ' MHz / ' + RF.modelName(c.model) + '</b><span>Radius / grid</span><b>' + fx(c.R / 1000, 1) + ' km, ' + c.rays + ' radials × ' + c.L + ' steps (' + fx(c.xi, 0) + ' m)</b>' +
-      '<span>Rx height</span><b>' + hShort(c.opts.hrx) + ' ' + (c.opts.rxMode === 'msl' ? 'MSL' : 'AGL') + '</b><span>Area ≥ sensitivity (' + fx(K.sens, 1) + ' dBm)</span><b>' + fx(above / tot * 100, 1) + '% (' + fx(above / tot * area, 0) + ' km²)</b><span>Area with geometric LOS</span><b>' + fx(los / tot * 100, 1) + '%</b>' +
+      '<span>Rx height</span><b>' + hShort(c.opts.hrx) + ' ' + (c.opts.rxMode === 'msl' ? 'MSL' : 'AGL') + '</b><span>Area ≥ ' + (OPM() ? 'minimum RSSI' : 'sensitivity') + ' (' + fx(K.sens, 1) + ' dBm)</span><b>' + fx(above / tot * 100, 1) + '% (' + fx(above / tot * area, 0) + ' km²)</b><span>Area with geometric LOS</span><b>' + fx(los / tot * 100, 1) + '%</b>' +
       bins.map(function (b, j) { return '<span>Area ≥ ' + b + ' dBm</span><b>' + fx(binA[j] / tot * 100, 1) + '%</b>'; }).join('') + '</div>';
     $('infoTab').innerHTML = '<h3 style="margin:0 0 8px">Coverage statistics</h3>' + h;
-    if (logIt) log('Coverage ≥ sensitivity: ' + fx(above / tot * 100, 1) + '% of ' + fx(area, 0) + ' km² (LOS ' + fx(los / tot * 100, 1) + '%)');
+    if (logIt) log('Coverage ≥ ' + (OPM() ? 'minimum RSSI' : 'sensitivity') + ': ' + fx(above / tot * 100, 1) + '% of ' + fx(area, 0) + ' km² (LOS ' + fx(los / tot * 100, 1) + '%)');
   }
   function valueAt(lat, lon) {
     if (!cur) return null;
     prepK();
     var d = PC.dist(cur.tx.lat, cur.tx.lon, lat, lon); if (d > cur.R) return null;
     var az = PC.bearing(cur.tx.lat, cur.tx.lon, lat, lon);
+    if (cur.losOnly) return 'viewshed: ' + (polarValue(cur, az, d, 'los') ? 'visible from Tx' : 'hidden by terrain');
     var prx = polarValue(cur, az, d, 'dbm'), los = polarValue(cur, az, d, 'los'), l = polarValue(cur, az, d, 'loss');
     var s = 'coverage: ' + (isFinite(prx) ? fx(prx, 1) + ' dBm' : '—') + '  loss ' + fx(l, 1) + ' dB  ' + (los ? 'LOS' : 'NLOS');
-    if (S.cov.display === 'js') s += '  J/S ' + fx(prx - S.cov.gnssSig, 1) + ' dB' + (prx - S.cov.gnssSig >= S.cov.jsThr ? ' DENIED' : '');
     return s;
   }
   function clear() { if (cur && cur.overlay) map.removeLayer(cur.overlay); cur = null; $('legend').innerHTML = ''; }
@@ -248,7 +261,7 @@ var COV = (function () {
   }
   function renderLayerList() {
     var el = $('covLayers'); if (!el) return;
-    el.innerHTML = kept.length ? '<h4>Kept coverage layers</h4>' + kept.map(function (k, i) { return '<label class="chk"><input type="checkbox" ' + (map.hasLayer(k.overlay) ? 'checked' : '') + ' onchange="COV.toggleKept(' + i + ',this.checked)"> ' + esc(k.name) + ' <a class="lnk" onclick="COV.dropKept(' + i + ')">✕</a></label>'; }).join('') : '';
+    el.innerHTML = kept.length ? '<h4>Kept coverage layers</h4>' + kept.map(function (k, i) { return '<label class="chk"><input type="checkbox" ' + (map.hasLayer(k.overlay) ? 'checked' : '') + ' onchange="COV.toggleKept(' + i + ',this.checked)"> ' + esc(k.name) + ' <a class="lnk" onclick="COV.dropKept(' + i + ')" title="Remove">' + ico('close') + '</a></label>'; }).join('') : '';
   }
   function toggleKept(i, on) { var k = kept[i]; if (!k) return; if (on) k.overlay.addTo(map); else map.removeLayer(k.overlay); }
   function dropKept(i) { var k = kept[i]; if (!k) return; map.removeLayer(k.overlay); kept.splice(i, 1); renderLayerList(); }
@@ -266,8 +279,8 @@ var COV = (function () {
     if (!cur) return log('Run coverage first.', 'w');
     var cv = renderCanvas(cur, 'eqr'), b = cur.bounds;
     Promise.all([canvasBytes(cv), canvasBytes(legendCanvas())]).then(function (bs) {
-      var kml = KML.doc('Signal Monkee coverage — ' + cur.tx.name, [
-        KML.groundOverlay('Coverage ' + fx(cur.f, 3) + ' MHz (' + RF.modelName(cur.model) + ')', 'coverage.png', b[1][0], b[0][0], b[1][1], b[0][1], S.cov.opacity),
+      var kml = KML.doc('Signal Monkee ' + (cur.losOnly ? 'viewshed' : 'coverage') + ' — ' + cur.tx.name, [
+        KML.groundOverlay(cur.losOnly ? 'Viewshed from ' + cur.tx.name : 'Coverage ' + fx(cur.f, 3) + ' MHz (' + RF.modelName(cur.model) + ')', 'coverage.png', b[1][0], b[0][0], b[1][1], b[0][1], S.cov.opacity),
         KML.screenOverlay('Legend', 'legend.png'),
         KML.placemark(cur.tx.name, cur.tx.lat, cur.tx.lon, cur.tx.h, 'tx', 'Transmitter, ' + fx(cur.f, 4) + ' MHz, EIRP ' + fx(RF.eirp(), 1) + ' dBm')
       ], KML.styles());
@@ -277,8 +290,11 @@ var COV = (function () {
   }
   function canvasBytes(cv) { return new Promise(function (res) { cv.toBlob(function (b) { b.arrayBuffer().then(function (a) { res(new Uint8Array(a)); }); }, 'image/png'); }); }
 
-  watch('cov.', function (k) { if (k === 'cov.opacity' && cur && cur.overlay) cur.overlay.setOpacity(+S.cov.opacity); else if (/display|top|bottom|step|palette|showBelow|jsThr|gnssSig/.test(k) && cur) paint(); else legend(); });
+  watch('op.', function (k) { if (cur && /minRssi|covDisplay/.test(k)) paint(); if (/earth/.test(k) && (cur || RF.last)) OPS.markStale(true); });
+  watch('los.', function (k) { if (cur && cur.losOnly && /showHidden/.test(k)) paint(); else if (/earth|rxH|rxMode|radius/.test(k) && ((cur && cur.losOnly) || (RF.last && RF.last.losOnly))) OPS.markStale(true); });
+  watch('f', function () { if (cur || RF.last) OPS.markStale(true); });
+  watch('cov.', function (k) { if (k === 'cov.opacity' && cur && cur.overlay) cur.overlay.setOpacity(+S.cov.opacity); else if (/display|top|bottom|step|palette|showBelow/.test(k) && cur) paint(); else legend(); });
   ['pwrW', 'txLoss', 'rxLoss', 'txGain', 'rxGain', 'rxNF', 'reqSNR', 'bwKHz', 'sensOverride', 'ant.', 'clutterDb'].forEach(function (p) { watch(p, function () { if (cur) paint(); }); });
 
-  return { dropAll: dropAll, run: run, paint: paint, legend: legend, valueAt: valueAt, clear: clear, keep: keep, renderLayerList: renderLayerList, toggleKept: toggleKept, dropKept: dropKept, exportKMZ: exportKMZ, exportPNG: exportPNG, renderCanvas: renderCanvas, canvasBytes: canvasBytes, legendCanvas: legendCanvas, get cur() { return cur; }, polarValue: polarValue, colorFor: colorFor };
+  return { rerun: rerun, dropAll: dropAll, run: run, paint: paint, legend: legend, valueAt: valueAt, clear: clear, keep: keep, renderLayerList: renderLayerList, toggleKept: toggleKept, dropKept: dropKept, exportKMZ: exportKMZ, exportPNG: exportPNG, renderCanvas: renderCanvas, canvasBytes: canvasBytes, legendCanvas: legendCanvas, get cur() { return cur; }, polarValue: polarValue, colorFor: colorFor };
 })();

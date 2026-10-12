@@ -15,6 +15,7 @@
     <input id="search" placeholder="Search: city, ICAO (KLAX), lat,lon, or 'tx'/'rx'…" autocomplete="off">
     <div class="seg" id="baseSeg"><button data-b="map" class="on">Map</button><button data-b="sat">Satellite</button><button data-b="flat">Contrast</button></div>
     <div class="hgrow"></div>
+    <div class="seg" id="modeSeg" title="Operator: simple line-of-sight check · Engineer: full RF analysis"><button data-m="operator">Operator</button><button data-m="engineer">Engineer</button></div>
     <div class="seg" id="unitSeg" title="Height units"><button data-u="m" class="on">m</button><button data-u="ft">ft</button></div>
     <span id="status"><span class="dot"></span><span id="statusTxt">ready</span></span>
   </header>
@@ -22,25 +23,25 @@
   <aside id="panel">
     <div id="pbody"></div>
     <div class="bigbtns" id="runbtns">
-      <button class="btn inf" id="bSave" title="Save project (JSON)">💾 Save</button>
-      <button class="btn" id="bLoad" title="Load project (JSON)">📂 Load</button>
-      <button class="btn pri" id="bP2P" title="Run point-to-point path analysis (P)">▶ Path</button>
-      <button class="btn pri" id="bCov" title="Run area coverage (C)" style="background:#1d7f4c">▶ Coverage</button>
+      <button class="btn inf" id="bSave" data-ico="save" title="Save project (JSON)">Save</button>
+      <button class="btn" id="bLoad" data-ico="open" title="Load project (JSON)">Load</button>
+      <button class="btn pri" id="bP2P" data-ico="play" title="Run point-to-point path analysis (P)">Path</button>
+      <button class="btn pri" id="bCov" data-ico="play" title="Run area coverage (C)" style="background:#1d7f4c">Coverage</button>
     </div>
     <div id="log"></div>
   </aside>
   <main id="mapwrap">
     <div id="map"></div>
     <div id="maptools">
-      <button class="hbtn" id="pickTx" title="Click map to place transmitter (T)">📍 Tx</button>
-      <button class="hbtn" id="pickRx" title="Click map to place receiver (R)">📍 Rx</button>
-      <button class="hbtn" id="pickTp" title="Click map to add test points (A)">＋ Test pt</button>
-      <div style="position:relative"><button class="hbtn" id="clrRes" title="Clear results or site markers">🧹 Clear ▾</button><div id="clrMenu" class="card hidden" style="position:absolute;right:0;top:32px;z-index:900;min-width:220px;padding:4px"><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="res">Clear results (coverage, path, grids)</button><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="sites">Clear Tx / Rx markers</button><button class="btn sm" style="width:100%;text-align:left;margin:2px 0" data-c="all">Clear everything (incl. 🛰 point)</button></div></div>
-      <button class="hbtn" id="pickGn" title="Click map to set GNSS/SATCOM analysis point (G)">🛰 Point</button>
+      <button class="hbtn" id="pickTx" data-ico="pin" title="Click map to place transmitter (T)">Tx</button>
+      <button class="hbtn" id="pickRx" data-ico="pin" title="Click map to place receiver (R)">Rx</button>
+      <button class="hbtn" id="pickGn" data-ico="sat" title="Click map to set GNSS/SATCOM analysis point (G)">Satellite</button>
+      <button class="hbtn" id="pickTp" data-ico="plus" title="Click map to add test points (A)">Test pt</button>
+      <div style="position:relative"><button class="hbtn" id="clrRes" data-ico="clear" title="Clear results or site markers">Clear ▾</button><div id="clrMenu" class="card hidden" style="position:absolute;right:0;top:32px;z-index:900;min-width:230px;padding:4px"><button class="btn sm" style="width:100%;margin:2px 0" data-c="res">Clear results (coverage, path, grids)</button><button class="btn sm" style="width:100%;margin:2px 0" data-c="sites">Clear Tx / Rx markers</button><button class="btn sm" style="width:100%;margin:2px 0" data-c="all">Clear everything (incl. satellite point)</button></div></div>
     </div>
     <div id="legend"></div>
     <div id="hud"></div>
-    <div id="staleBar" style="display:none;position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:650;align-items:center;gap:8px;background:rgba(74,59,16,.95);border:1px solid var(--warn);border-radius:6px;padding:5px 10px">Sites moved — results show the previous placement. <button class="btn sm pri" onclick="RF.runP2P()">▶ Path</button><button class="btn sm" onclick="COV.run()">▶ Coverage</button></div>
+    <div id="staleBar" style="display:none;position:absolute;left:50%;bottom:12px;transform:translateX(-50%);z-index:650;align-items:center;gap:8px;background:rgba(74,59,16,.95);border:1px solid var(--warn);border-radius:6px;padding:5px 10px">Inputs changed — results are from the previous run. <button class="btn sm pri" data-ico="play" onclick="RF.rerun()">Re-run path</button><button class="btn sm" data-ico="play" onclick="COV.rerun()">Re-run map</button></div>
     <div id="prog"><span id="progTxt">Working…</span><div class="bar"><i id="progBar"></i></div></div>
   </main>
   <section id="drawer">
@@ -48,10 +49,10 @@
       <div class="seg" id="dtabs"><button data-t="summary">Summary</button><button data-t="profile" class="on">Profile</button><button data-t="report">Report</button><button data-t="tp">Test points</button><button data-t="info">Info</button></div>
       <span class="hgrow" style="flex:1"></span>
       <select id="pfView" class="inp" style="width:auto;padding:2px 6px" title="Profile view"><option value="curved">Curved earth</option><option value="fresnel">Fresnel clearance (relative to LOS)</option><option value="flat">Flat earth</option></select>
-      <button class="btn sm inf" id="dlPdf">⬇ PDF report</button>
-      <button class="btn sm" id="dlReport">⬇ Report .txt</button>
-      <button class="btn sm" id="dlProfile">⬇ Profile .png</button>
-      <button class="btn sm" id="dClose">✕</button>
+      <button class="btn sm inf" id="dlPdf" data-ico="download">PDF report</button>
+      <button class="btn sm" id="dlReport" data-ico="download">Report .txt</button>
+      <button class="btn sm" id="dlProfile" data-ico="download">Profile .png</button>
+      <button class="btn sm" id="dClose" data-ico="close" title="Close"></button>
     </div>
     <div class="db">
       <div class="tab" data-t="summary"><div id="sumTab"></div></div>

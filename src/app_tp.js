@@ -75,7 +75,7 @@ var TP = (function () {
     });
   }
   function computeAll() {
-    if (!pts.length) { log('No test points. Use “＋ Test pt” or import CSV/KML.', 'w'); return Promise.resolve(); }
+    if (!pts.length) { log('No test points. Use the Test pt map button or import CSV/KML.', 'w'); return Promise.resolve(); }
     return RF.ensureFor([S.tx].concat(pts), 0.02).then(function () {
       var i = 0;
       return new Promise(function (res) {
@@ -92,13 +92,13 @@ var TP = (function () {
   function summarize(A) { return { D: A.D, az: A.az, z: A.z[A.n], los: A.minClr >= 0, f1: A.minRatio, L: A.Lsel, Prx: A.Prx, E: A.E, snr: A.snr, margin: A.margin, mode: A.Litm.itm ? ITM.MODES[A.Litm.itm.mode] : '' }; }
   function renderTable() {
     var el = $('tpTable'); if (!el) return;
-    if (!pts.length) { el.innerHTML = '<div class="note" style="padding:12px">No test points yet. Click “＋ Test pt” on the map, right-click → Add test point, or import a CSV (name,lat,lon[,height]) / KML.</div>' + tpButtons(); bindButtons(); return; }
+    if (!pts.length) { el.innerHTML = '<div class="note" style="padding:12px">No test points yet. Click Test pt on the map, right-click → Add test point, or import a CSV (name,lat,lon[,height]) / KML.</div>' + tpButtons(); bindButtons(); return; }
     var h = tpButtons() + '<table class="t"><tr><th>#</th><th>Name</th><th>Lat</th><th>Lon</th><th>Ground</th><th>Rx h</th><th>Dist km</th><th>Az°</th><th>LOS</th><th>F1 %</th><th>Loss dB</th><th>Pred dBm</th><th>Margin</th><th>Meas dBm</th><th>Δ</th><th></th></tr>';
     pts.forEach(function (p, i) {
       var A = p.A, d = A && p.meas !== '' && isFinite(+p.meas) ? +p.meas - A.Prx : NaN;
       h += '<tr><td>' + (i + 1) + '</td><td><input value="' + esc(p.name) + '" data-i="' + i + '" data-f="name" style="width:90px"></td><td class="n">' + fx(p.lat, 5) + '</td><td class="n">' + fx(p.lon, 5) + '</td><td class="n">' + (A ? hShort(A.z) : '') + '</td><td><input value="' + fx(hU(p.h), 1) + '" data-i="' + i + '" data-f="h" style="width:52px"> ' + (p.mode === 'msl' ? 'MSL' : 'AGL') + '</td>' +
         (A ? '<td class="n">' + fx(A.D / 1000, 2) + '</td><td class="n">' + fx(A.az, 1) + '</td><td>' + (A.los ? '<span class="tag ok">LOS</span>' : '<span class="tag bad">NLOS</span>') + '</td><td class="n">' + fx(A.f1 * 100, 0) + '</td><td class="n">' + fx(A.L, 1) + '</td><td class="n"><b>' + fx(A.Prx, 1) + '</b></td><td class="n">' + sgn(A.margin, 1) + '</td>' : '<td colspan="7" class="mini">not computed</td>') +
-        '<td><input value="' + esc(p.meas) + '" data-i="' + i + '" data-f="meas" style="width:60px" placeholder="—"></td><td class="n">' + (isFinite(d) ? sgn(d, 1) : '') + '</td><td><a class="lnk" onclick="TP.zoom(' + i + ')">⌖</a> <a class="lnk" onclick="TP.asRx(' + i + ')">Rx</a> <a class="lnk" onclick="TP.del(' + i + ')">✕</a></td></tr>';
+        '<td><input value="' + esc(p.meas) + '" data-i="' + i + '" data-f="meas" style="width:60px" placeholder="—"></td><td class="n">' + (isFinite(d) ? sgn(d, 1) : '') + '</td><td><a class="lnk" onclick="TP.zoom(' + i + ')" title="Zoom to">' + ico('zoom') + '</a> <a class="lnk" onclick="TP.asRx(' + i + ')">Rx</a> <a class="lnk" onclick="TP.del(' + i + ')" title="Remove">' + ico('close') + '</a></td></tr>';
     });
     var ds = pts.filter(function (p) { return p.A && p.meas !== '' && isFinite(+p.meas); }).map(function (p) { return +p.meas - p.A.Prx; });
     if (ds.length) { var mean = ds.reduce(function (a, b) { return a + b; }, 0) / ds.length, sd = Math.sqrt(ds.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / ds.length); h += '<tr><td colspan="14" style="text-align:right">Measured − predicted (n=' + ds.length + '): mean ' + sgn(mean, 1) + ' dB, σ ' + fx(sd, 1) + ' dB</td><td colspan="2"></td></tr>'; }
@@ -106,8 +106,9 @@ var TP = (function () {
     el.querySelectorAll('input[data-i]').forEach(function (inp) { inp.onchange = function () { var p = pts[+inp.dataset.i], f = inp.dataset.f; if (f === 'h') { p.h = (+inp.value) * (S.units.h === 'ft' ? 0.3048 : 1); p.A = null; } else p[f] = inp.value; save(); renderTable(); draw(); }; });
     bindButtons();
   }
-  function tpButtons() { return '<div class="row" style="padding:6px 10px"><button class="btn pri sm" id="tpRun">Compute all</button><button class="btn sm" id="tpImp">Import CSV/KML</button><button class="btn sm" id="tpKml">⬇ Google Earth KMZ</button><button class="btn sm" id="tpKmlP">⬇ KML (points)</button><button class="btn sm" id="tpCsv">⬇ CSV</button><button class="btn sm" id="tpClr">Clear all</button><span class="mini">Rx gain/losses and model from the RF panel apply; heights use each point’s value.</span></div>'; }
+  function tpButtons() { return '<div class="row" style="padding:6px 10px"><button class="btn pri sm" data-ico="play" id="tpRun">Compute all</button><button class="btn sm" data-ico="open" id="tpImp">Import CSV/KML</button><button class="btn sm" data-ico="download" id="tpKml">Google Earth KMZ</button><button class="btn sm" data-ico="download" id="tpKmlP">KML (points)</button><button class="btn sm" data-ico="download" id="tpCsv">CSV</button><button class="btn sm" data-ico="clear" id="tpClr">Clear all</button><span class="mini">Rx gain/losses and model from the RF panel apply; heights use each point’s value.</span></div>'; }
   function bindButtons() {
+    applyIcons($('tpTable'));
     var b = function (id, f) { var e = $(id); if (e) e.onclick = f; };
     b('tpRun', computeAll); b('tpImp', importPts); b('tpKml', function () { exportKMZ(true); }); b('tpKmlP', function () { exportKMZ(false); }); b('tpCsv', exportCSV);
     b('tpClr', function () { if (confirm('Remove all test points?')) { pts = []; save(); draw(); renderTable(); } });
@@ -173,10 +174,10 @@ var TP = (function () {
   function del(i) { pts.splice(i, 1); save(); draw(); renderTable(); }
   function render() {
     return '<h3>Test points & export</h3><div class="note">Test points are evaluated with the full path engine (profile, ITM, Fresnel, link budget). Enter measured RSSI to compare against prediction.</div>' +
-      '<div class="row"><button class="btn sm" onclick="setPick(\'tp\')">＋ Add on map</button><button class="btn pri sm" onclick="TP.computeAll()">Compute all</button><button class="btn sm" onclick="openDrawer(\'tp\')">Open table</button></div>' +
-      '<h4>Export</h4><div class="row"><button class="btn sm" onclick="TP.exportKMZ(true)">⬇ Google Earth KMZ (Tx, Rx, path, test points, coverage)</button></div>' +
-      '<div class="row"><button class="btn sm" onclick="TP.exportKMZ(false)">⬇ KML (test points)</button><button class="btn sm" onclick="TP.exportCSV()">⬇ CSV</button><button class="btn sm" onclick="COV.exportKMZ()">⬇ Coverage KMZ</button></div>' +
-      '<div class="row"><button class="btn sm" onclick="if(RF.last)download(\'signalmonkee_report.txt\',RF.report(RF.last))">⬇ Path report (.txt)</button><button class="btn sm" onclick="PROJ.save()">💾 Project JSON</button><button class="btn sm" onclick="PROJ.load()">📂 Load project</button></div>' +
+      '<div class="row"><button class="btn sm" data-ico="plus" onclick="setPick(\'tp\')">Add on map</button><button class="btn pri sm" data-ico="play" onclick="TP.computeAll()">Compute all</button><button class="btn sm" onclick="openDrawer(\'tp\')">Open table</button></div>' +
+      '<h4>Export</h4><div class="row"><button class="btn sm" data-ico="download" onclick="TP.exportKMZ(true)">Google Earth KMZ (Tx, Rx, path, test points, coverage)</button></div>' +
+      '<div class="row"><button class="btn sm" data-ico="download" onclick="TP.exportKMZ(false)">KML (test points)</button><button class="btn sm" data-ico="download" onclick="TP.exportCSV()">CSV</button><button class="btn sm" data-ico="download" onclick="COV.exportKMZ()">Coverage KMZ</button></div>' +
+      '<div class="row"><button class="btn sm" onclick="if(RF.last)download(\'signalmonkee_report.txt\',RF.report(RF.last))" data-ico="download">Path report (.txt)</button><button class="btn sm" data-ico="save" onclick="PROJ.save()">Project JSON</button><button class="btn sm" data-ico="open" onclick="PROJ.load()">Load project</button></div>' +
       '<div class="card mini">Points: ' + pts.length + '. KMZ placemarks are coloured by predicted level using the coverage palette, extruded to the receive height, with ExtendedData (pred_dbm, path_loss_db, los, measured_dbm…).</div>';
   }
   return { clearResults: clearResults, add: add, draw: draw, computeAll: computeAll, renderTable: renderTable, exportKMZ: exportKMZ, exportCSV: exportCSV, zoom: zoom, asRx: asRx, del: del, render: render, list: function () { return pts; }, set: function (a) { pts = a || []; save(); draw(); } };

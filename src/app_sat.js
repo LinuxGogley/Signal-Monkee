@@ -19,21 +19,21 @@ var SAT = (function () {
   function ageStr(ts) { var h = (Date.now() - ts) / 3600e3; return h < 1 ? Math.round(h * 60) + ' min old' : h < 48 ? fx(h, 1) + ' h old' : fx(h / 24, 1) + ' d old'; }
   function loadCached() {
     var ids = STATIC.constellations.gnss.concat(STATIC.constellations.satcom).map(function (c) { return c[1]; });
-    return Promise.all(ids.map(function (id) { return DEM.idbGet('kv', 'tle:' + id).then(function (v) { if (v) { groups[id] = { ts: v.ts, sats: parseTLE(v.text), src: v.src }; } }); }));
+    return Promise.all(ids.map(function (id) { return DEM.idbGet('kv', 'tle:' + id).then(function (v) { if (v) { groups[id] = { ts: v.ts, sats: parseTLE(v.text), src: v.src, text: v.text }; } }); }));
   }
-  function fetchGroup(id) {
+  function fetchGroup(id, quiet) {
     var url = 'https://celestrak.org/NORAD/elements/gp.php?GROUP=' + encodeURIComponent(id) + '&FORMAT=tle';
     status('TLE ' + id + '…');
     return fetchJSONorText(url, null, true).then(function (t) {
       var sats = parseTLE(t); if (!sats.length) throw new Error('no TLEs in response');
-      groups[id] = { ts: Date.now(), sats: sats, src: 'CelesTrak' }; DEM.idbPut('kv', 'tle:' + id, { ts: Date.now(), text: t, src: 'CelesTrak' });
-      status('ready'); log('TLE ' + id + ': ' + sats.length + ' satellites (CelesTrak)', 'g'); return sats.length;
-    }).catch(function (e) { status('ready'); log('TLE ' + id + ' fetch failed: ' + e.message, 'e'); return 0; });
+      groups[id] = { ts: Date.now(), sats: sats, src: 'CelesTrak', text: t }; DEM.idbPut('kv', 'tle:' + id, { ts: Date.now(), text: t, src: 'CelesTrak' });
+      status('ready'); if (!quiet) log('TLE ' + id + ': ' + sats.length + ' satellites (CelesTrak)', 'g'); return sats.length;
+    }).catch(function (e) { status('ready'); if (!quiet) log('TLE ' + id + ' fetch failed: ' + e.message, 'e'); return 0; });
   }
   function importTLE(id) {
     return pickFiles('.txt,.tle,.3le').then(function (fs) {
       if (!fs.length) return;
-      return readText(fs[0]).then(function (t) { var sats = parseTLE(t); groups[id] = { ts: fs[0].lastModified || Date.now(), sats: sats, src: fs[0].name }; DEM.idbPut('kv', 'tle:' + id, { ts: groups[id].ts, text: t, src: fs[0].name }); log('Imported ' + sats.length + ' TLEs into ' + id, 'g'); rerender(); });
+      return readText(fs[0]).then(function (t) { var sats = parseTLE(t); groups[id] = { ts: fs[0].lastModified || Date.now(), sats: sats, src: fs[0].name, text: t }; DEM.idbPut('kv', 'tle:' + id, { ts: groups[id].ts, text: t, src: fs[0].name }); log('Imported ' + sats.length + ' TLEs into ' + id, 'g'); rerender(); });
     });
   }
 
@@ -142,7 +142,7 @@ var SAT = (function () {
   function when() { var w = S.gnss.when; var d = w ? new Date(w) : new Date(); return isNaN(d) ? new Date() : d; }
   function setPoint(lat, lon) {
     pt = { lat: lat, lon: lon, h: S.rx.mode === 'agl' ? S.rx.h : 2 }; hz = null;
-    if (!markers.gn) markers.gn = L.marker([lat, lon], { icon: mkIcon('gn', '🛰', 24), draggable: true }).addTo(map).on('dragend', function (e) { var ll = e.target.getLatLng(); setPoint(ll.lat, ll.lng); });
+    if (!markers.gn) markers.gn = L.marker([lat, lon], { icon: mkIcon('gn', ico('sat'), 24), draggable: true }).addTo(map).on('dragend', function (e) { var ll = e.target.getLatLng(); setPoint(ll.lat, ll.lng); });
     markers.gn.setLatLng([lat, lon]);
     if (curPanel !== 'gnss' && curPanel !== 'sat') showPanel('gnss'); else rerender();
     analyzePoint();
@@ -347,15 +347,12 @@ var SAT = (function () {
   }
   function renderGnss() {
     ensurePt();
-    var h = '<h3>GNSS coverage & denial</h3>';
+    var h = '<h3>GNSS coverage</h3>';
     h += '<div class="card"><div class="kv"><span>Analysis point</span><b>' + fx(pt.lat, 5) + ', ' + fx(pt.lon, 5) + '</b></div><div class="row"><button class="btn sm" onclick="setPick(\'gn\')">Pick on map</button><button class="btn sm" onclick="SAT.setPoint(S.tx.lat,S.tx.lon)">Use Tx</button><button class="btn sm" onclick="SAT.setPoint(S.rx.lat,S.rx.lon)">Use Rx</button></div></div>';
     h += F('Elevation mask', 'gnss.mask', { unit: '°' }) + CK('Apply terrain horizon mask', 'gnss.terrain') + F('Horizon search radius', 'gnss.horizonKm', { unit: 'km' }) + F('Epoch (UTC, blank = now)', 'gnss.when', { text: 1, title: 'e.g. 2026-10-12T15:00Z' });
     h += '<div class="row"><button class="btn pri sm" id="gnRun">Analyze point</button><button class="btn sm" id="gnTL">24 h timeline</button><button class="btn sm" id="gnFetch">Fetch all GNSS TLEs</button></div>';
     h += '<canvas class="sky" id="gnssSky"></canvas><div id="gnssOut" class="note">Run an analysis to see the sky plot and DOP.</div><canvas class="chart" id="gnssChart"></canvas>';
     h += '<h4>Area maps (current view)</h4>' + F('Grid cells per side', 'gnss.grid') + '<div class="row"><button class="btn sm" id="gnArea">Terrain-masked PDOP map</button><button class="btn sm" onclick="SAT.clearArea()">Clear grid</button></div>';
-    h += '<h4>Jamming / denial study</h4><div class="note">Treat the Tx site as a GNSS interference source and compute where J/S exceeds the receiver tolerance using the terrain propagation engine. Typical civil L1 C/A tolerances: ~24 dB (acquisition) to ~35–40 dB (tracking).</div>' +
-      F('GNSS signal at Rx', 'cov.gnssSig', { unit: 'dBm' }) + F('J/S denial threshold', 'cov.jsThr', { unit: 'dB' }) +
-      '<div class="row"><button class="btn wrn sm" id="gnJam">Run L1 J/S denial map from Tx</button></div>';
     h += '<h4>Orbital data (CelesTrak GP)</h4><table class="t">' + tleRows(STATIC.constellations.gnss) + '</table>';
     h += '<div class="note">Interference reports: enable "Known test / chronic areas" or fetch gpsjam.org in Layers. Always check NOTAMs for GPS testing.</div>';
     return h;
@@ -365,7 +362,6 @@ var SAT = (function () {
     $('gnTL').onclick = function () { timeline(); };
     $('gnFetch').onclick = function () { Promise.all(STATIC.constellations.gnss.map(function (c) { return fetchGroup(c[1]); })).then(function () { rerender(); analyzePoint(); }); };
     $('gnArea').onclick = function () { areaMap('gnss'); };
-    $('gnJam').onclick = function () { S.f = 1575.42; S.cov.display = 'js'; S.bwKHz = 2046; saveState(); rerender(); COV.run(); };
     if (lastVis) setTimeout(function () { drawGnss(); }, 0);
   }
   function renderSat() {

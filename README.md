@@ -7,6 +7,9 @@ A terrain-aware RF path-link and coverage tool that runs entirely in a web brows
 - **Aviation, repeater and Meshtastic layers.**
 - **GNSS and SATCOM visibility:** SGP4, DOP and terrain masking.
 - **Exports:** Google Earth KMZ, CSV, and PDF and text reports.
+- **Two modes:** *Engineer* (full RF analysis) and *Operator* (a one-page line-of-sight check for pilots and field users).
+- **LOS planning:** a terrain-only line-of-sight check and viewshed map with no radio settings, in both modes.
+- **Offline data packages:** build a .zip of terrain, public-domain imagery and satellite orbits while online, then import it on a computer with no internet.
 
 The shipped product is **one self-contained HTML file** (`dist/Signal_Monkee.html`). This repository holds the readable source that produces it.
 
@@ -57,6 +60,9 @@ src/
   app_sat.js        TLE handling, SGP4 look angles, sky plot, DOP, horizon masks, GEO footprints, LEO availability
   app_tp.js         test points, ZIP writer, KML builder/parser, CSV, project save/load
   app_ops.js        pass/fail verdict, Summary card, Clear, PDF report (jsPDF)
+  app_opmode.js     Operator mode panel and the Operator/Engineer switch
+  app_los.js        LOS planning panel: terrain-only check + viewshed (RF.runP2P / COV.run with {losOnly:true})
+  app_offline.js    offline packages: build (ZIP of tiles + orbits + layers), import (into IndexedDB), cached tile layer
   app_main.js       Terrain & Help panels, panel registration, boot()
 vendor/             third-party libraries (unmodified dist builds) + licenses/
 data/               compact JSON datasets + mascot images (regenerate with tools/make_data.py)
@@ -85,6 +91,60 @@ There's no framework and no bundler. Each `src/app_*.js` file is a plain script 
    - The required Tx/Rx heights for 0, 60 and 100 % F1 clearance are solved in closed form per sample.
 4. **Loss.** `PC.pathLoss()` runs ITM, P.526 (Deygout, three edges) and Hata on the same profile. ITM is valid for 0.5–3000 m terminal heights. Outside that range (for example aircraft), the code falls back to geometric LOS plus P.526, and the report says so.
 5. **Budget.** EIRP plus antenna pattern toward Rx (from azimuth and elevation angle), minus loss and clutter, plus Rx gain, minus Rx feeder loss, gives Prx. From that come field strength, SNR (noise = −174 + 10·log B + NF), margin against sensitivity, and the verdict (`OPS.verdict`: PASS / MARGINAL / FAIL against the required fade margin).
+
+### Operator mode (`app_opmode.js`, `S.mode = 'operator'`)
+
+Operator mode reuses the same engine but changes four things, all via `OPM()` checks:
+
+| | Engineer | Operator |
+|---|---|---|
+| Path loss | ITM / P.526 / Hata / free space | free space only |
+| Line of sight | Fresnel zones, ITM regimes | geometric LOS over the terrain profile |
+| Antennas | pattern files, feeder losses | isotropic, Tx + Rx gain only |
+| Pass/fail | margin ≥ required fade margin over sensitivity | LOS clear **and** RSSI ≥ minimum RSSI |
+
+- **Earth curvature:** standard radio horizon (k = 4/3) or geometric/visual (k = 1). `RF.effEarth()` returns 4/3·6371 km or 6371 km.
+- **Altitude needed:** the result card reports the receiver altitude (MSL) needed for line of sight (`A.rxAltNeed`), and the transmitter height that would also work.
+- **Coverage:** runs the worker with `model: 'los'`, so blocked points are left blank. The colour scale starts at the minimum RSSI (`COV.CC()`).
+- **Switching modes** clears results, because the two modes calculate differently.
+
+### LOS planning (`app_los.js`)
+
+`RF.runP2P({ losOnly: true })` and `COV.run({ losOnly: true })` reuse the path and coverage engines, but ignore every radio parameter.
+- **Earth curvature:** set separately in `S.los.earth`, either standard (4/3) or geometric (k = 1).
+- **Results:** `A.losOnly` switches the result card and PDF to **CLEAR / BLOCKED**, with the highest blocking terrain and the altitude needed for line of sight.
+- **Viewshed map:** colours the area visible from point A green, and optionally shades hidden areas red.
+
+### Contrast-map themes (`THEMES` in `app_core.js`)
+
+Most themes fill the Natural Earth land polygons (`basemap.json → land`), so the Contrast map works offline everywhere. A transparent relief overlay, computed from terrain tiles, is drawn on top where terrain is available. **Grey relief** instead draws the opaque hillshade. To add a theme, add an entry with these keys:
+
+| Key | Meaning |
+|---|---|
+| `bg` | sea / background colour |
+| `fill` | land colour |
+| `lake` | lake colour |
+| `coast`, `borders`, `states` | line colours |
+| `relief` | `[shadowAlpha, highlightAlpha, highlightRGB]` |
+| `label`, `halo` | city label text and outline colours |
+| `w` | optional line widths `[coast, country borders, states]` in px |
+| `heavy` | `true` draws thicker lines (when `w` is not set) |
+
+### Offline packages (`app_offline.js`)
+
+`OFFLINE.build()`:
+1. Enumerates tiles for the area: the map view, or a radius around both the Tx and Rx so the whole path is covered.
+2. Reads each tile from the IndexedDB cache or downloads it (8 at a time).
+3. Writes a store-only ZIP: `manifest.json`, `terrain/z/x/y.png`, `imagery/<id>/z/x/y.jpg`, `tle/<group>.txt`, and optionally `layers.json`, `testpoints.json` and `project.json`.
+
+`OFFLINE.importPkg()`:
+1. Unzips the package.
+2. Writes every tile to IndexedDB **under the exact URL the app would request online** (`DEM.tileURL()`, or the USGS template), so nothing else needs to know it is offline.
+3. Stores the TLEs, then merges layers and test points.
+
+The `tests/offline_test.py` round trip shows identical path and coverage results with zero network requests.
+
+Only public-domain imagery (USGS The National Map: `USGSImageryOnly`, `USGSTopo`; U.S. coverage) is packaged. Esri, CARTO and OpenStreetMap tiles are online-only because their terms restrict bulk offline copies. Offline, the **Contrast** basemap is rendered from the packaged terrain.
 
 ### Coverage (`COV.run`)
 
@@ -121,13 +181,15 @@ tools/build_itm_ref.sh && node tools/validate_itm.js     # expect: bad 0, maxdif
 - **Terrain tiles, TLEs and imported layers** live in IndexedDB `pathlink-rf`.
 - **Test points** live in `localStorage['pathlink.tp']`.
 - **Project files** (💾 Save / 📂 Load) are plain JSON holding `S` and the test points.
+- **Offline packages** are stored in the same IndexedDB (`tiles` store; `kv` keys `tle:<group>` and `offline:packages`).
+- **Mode:** `S.mode` is `'engineer'` or `'operator'`, and Operator-only values live in `S.op` (`minRssi`, `earth`, `covDisplay`).
 
 ### Embedded datasets (row formats, see `tools/make_data.py`)
 
 - `airports.json`: `[ident, iata, type L/M/S/W, name, lat, lon, elev_ft, country, municipality, [[type, desc, MHz], …]]`
 - `navaids.json`: `[ident, name, type, freq_kHz, lat, lon, elev_ft, country, dme_channel, power, airport]`
 - `cities.json`: `[name, lat, lon, pop_max, scalerank, adm0_a3, is_capital]`
-- `basemap.json`: `{coast, states, borders, lakes}`, each a list of flat `[lon, lat, lon, lat, …]` lines
+- `basemap.json`: `{land, coast, states, borders, lakes}`. `land` is a list of polygons, each a list of rings (outer first, then holes). The others are lists of lines. All coordinates are flat `[lon, lat, lon, lat, …]` arrays.
 
 ---
 
@@ -154,8 +216,11 @@ tools/build_itm_ref.sh && node tools/validate_itm.js     # expect: bad 0, maxdif
 pip install playwright numpy pillow && playwright install chromium
 python3 build.py
 python3 tests/run.py            # P2P, coverage, basemaps, airband, GNSS, SATCOM, test points/KMZ, layers
-python3 tests/run.py extra      # aircraft path, jammer J/S map, KMZ with overlay, SRTM .hgt import
+python3 tests/run.py extra      # aircraft path, field-strength map, KMZ with overlay, SRTM .hgt import
 python3 tests/place_test.py     # placement without data pulls, stale-result bar, Clear menu
+python3 tests/op_test.py        # Operator mode: blocked/clear LOS, altitude needed, RSSI check, coverage, PDF
+python3 tests/offline_test.py   # build a package online, import into a fresh offline profile, compare results
+python3 tests/los_test.py       # LOS planning: clear/blocked, altitude needed, viewshed, PDF, both modes
 ```
 
 The tests intercept all network requests. Terrain tiles come from a synthetic mountain model (`tests/fixtures.py`), and CelesTrak is answered with generated GPS / Galileo / GLONASS / Iridium / Starlink-like TLEs. They run offline and give the same results every time. Screenshots go to `tests/out/`.
@@ -165,6 +230,8 @@ The tests intercept all network requests. Terrain tiles come from a synthetic mo
 ## Known limitations
 
 - **Bare-earth terrain:** no buildings or vegetation. Use the clutter-loss field to account for them.
+- **Operator mode is deliberately simple:** geometric line of sight plus free-space loss with isotropic antennas. It does not model diffraction, fading or real antenna patterns, so use Engineer mode for marginal links.
+- **Offline imagery is U.S.-only:** it uses USGS. The imagery export depends on the USGS server allowing browser downloads; terrain and orbits don't.
 - **ITM validity:** 20 MHz–20 GHz and 0.5–3000 m terminal heights. Outside that, the tool falls back to P.526 as described above.
 - **Live fetches:** these are made by the browser. Some services (RepeaterBook, BrandMeister, meshmap.net, gpsjam.org, CelesTrak) may block cross-origin requests from `file://`. Every fetcher has an **Import** fallback for a saved response.
 - **Frequencies and satellite data are informational.** Airport frequencies come from the community-maintained OurAirports, and GEO slots are nominal. Verify against official sources before operational use.

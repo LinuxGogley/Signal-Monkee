@@ -12,6 +12,7 @@ var LAY = (function () {
     try { var c = JSON.parse(localStorage.getItem('pathlink.ext') || 'null'); if (c) ext = Object.assign(ext, c); } catch (e) { }
     loadExtIDB().then(function () { refreshAll(); });
   }
+  function mergeExt(o) { ['ham', 'dmr', 'mesh', 'custom'].forEach(function (k) { if (Array.isArray(o[k]) && o[k].length) ext[k] = o[k]; }); saveExt(); drawExt(); }
   function saveExt() { DEM.idbPut('kv', 'ext', JSON.stringify(ext)); }
   function loadExtIDB() { return DEM.idbGet('kv', 'ext').then(function (j) { if (j) try { ext = Object.assign(ext, JSON.parse(j)); } catch (e) { } }); }
 
@@ -276,8 +277,9 @@ var LAY = (function () {
       '<div class="row"><button class="btn sm" onclick="LAY.meshPreset();rerender()">Load LongFast link preset</button></div>';
     h += '<h4>GNSS interference</h4>' + CK('Known test / chronic interference areas', 'layers.gnssAreas') +
       '<div class="row"><input type="date" id="gjDate" class="inp" style="width:150px" value="' + new Date(Date.now() - 864e5).toISOString().slice(0, 10) + '"><button class="btn sm" id="fGJ">Fetch gpsjam.org</button><button class="btn sm" id="iGJ">Import CSV</button><button class="btn sm" id="cGJ">Clear</button></div>';
-    h += '<h4>Basemap</h4>' + F('Map style', 'mapStyle', { sel: [['esritopo', 'Esri World Topo'], ['voyager', 'CARTO Voyager'], ['topo', 'OpenTopoMap'], ['osm', 'OpenStreetMap (needs referrer)']] }) +
-      F('Contrast theme', 'flatTheme', { sel: [['gray', 'Grey terrain, dark ocean'], ['light', 'Light grey']] }) + CK('Satellite labels overlay', 'satLabels') + CK('Contrast map: city labels', 'layers.cities') + CK('Contrast map: coast/borders/states', 'layers.vectors') +
+    h += '<h4>Basemap</h4>' + F('Map style', 'mapStyle', { sel: [['esritopo', 'Esri World Topo'], ['usgstopo', 'USGS Topo (U.S., offline-capable)'], ['voyager', 'CARTO Voyager'], ['topo', 'OpenTopoMap'], ['osm', 'OpenStreetMap (needs referrer)']] }) +
+      F('Satellite imagery', 'satSrc', { sel: [['esri', 'Esri World Imagery (online)'], ['usgsimg', 'USGS Imagery (U.S., offline-capable)']] }) +
+      F('Contrast theme', 'flatTheme', { sel: Object.keys(THEMES).map(function (k) { return [k, THEMES[k].name]; }) }) + CK('Contrast map: terrain relief shading', 'flatRelief') + CK('Satellite labels overlay', 'satLabels') + CK('Contrast map: city labels', 'layers.cities') + CK('Contrast map: coast/borders/states', 'layers.vectors') +
       F('Custom tile URL', 'customTiles', { text: 1, title: 'e.g. your licensed imagery or a local tile server: https://host/{z}/{x}/{y}.png' }) + (S.customTiles ? '<div class="row"><button class="btn sm" onclick="setBase(\'custom\')">Use custom tiles</button></div>' : '');
     h += '<h4>Other</h4><div class="row"><button class="btn sm" id="iCus">Import points (CSV/JSON/KML)</button><button class="btn sm" id="cCus">Clear custom (' + ext.custom.length + ')</button></div>';
     h += '<div class="note">Live sources are fetched directly by your browser. If a service blocks cross-origin requests from a local file, open the URL in a tab, save the response and use Import — the parser accepts RepeaterBook, BrandMeister, meshmap.net / Meshtastic map JSON and generic CSV with lat/lon columns.</div>';
@@ -297,8 +299,10 @@ var LAY = (function () {
   watch('layers.', function (k) { if (k === 'layers.artcc') drawARTCC(); else if (k === 'layers.gnssAreas') drawGnssAreas(); else if (k === 'layers.cities') refreshCities(); else if (k === 'layers.vectors') refreshVectors(); else refreshDynamic(); });
   watch('mapStyle', function () { buildBaseLayers(); setBase('map'); });
   watch('satLabels', function () { buildBaseLayers(); setBase(S.base); });
+  watch('satSrc', function () { buildBaseLayers(); setBase(S.base); });
   watch('customTiles', function () { buildBaseLayers(); rerender(); });
   watch('flatTheme', function () { buildBaseLayers(); setBase('flat'); });
+  watch('flatRelief', function () { buildBaseLayers(); setBase(S.base); });
 
   /* ---------- Airband / ATC panel ---------- */
   function renderAir() {
@@ -330,5 +334,5 @@ var LAY = (function () {
   }
   function openAirportById(id) { var a = findAirport(id); if (a) { map.setView([a[4], a[5]], Math.max(map.getZoom(), 10)); openAirport(a); } }
 
-  return { initLayers: initLayers, refreshAll: refreshAll, renderLayers: renderLayers, afterLayers: afterLayers, renderAir: renderAir, afterAir: afterAir, findAirport: findAirport, openAirport: openAirport, openAirportById: openAirportById, useAs: useAs, meshPreset: meshPreset, ingest: ingest, ext: function () { return ext; }, gpsjamFromText: gpsjamFromText };
+  return { mergeExt: mergeExt, initLayers: initLayers, refreshAll: refreshAll, renderLayers: renderLayers, afterLayers: afterLayers, renderAir: renderAir, afterAir: afterAir, findAirport: findAirport, openAirport: openAirport, openAirportById: openAirportById, useAs: useAs, meshPreset: meshPreset, ingest: ingest, ext: function () { return ext; }, gpsjamFromText: gpsjamFromText };
 })();

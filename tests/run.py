@@ -55,8 +55,8 @@ def main(which):
             pg.evaluate("S.cov.display='dbm';COV.paint()")
         if 'base' in which:
             pg.click('#baseSeg button[data-b=flat]'); time.sleep(2.5); pg.screenshot(path=OUT + '/04_flat.png')
-            pg.evaluate("S.flatTheme='light';buildBaseLayers();setBase('flat')"); time.sleep(2); pg.screenshot(path=OUT + '/04_flat_light.png')
-            pg.evaluate("S.flatTheme='dark';buildBaseLayers();setBase('sat')"); time.sleep(1); pg.screenshot(path=OUT + '/04_sat.png')
+            pg.evaluate("S.flatTheme='gray';buildBaseLayers();setBase('flat')"); time.sleep(2); pg.screenshot(path=OUT + '/04_flat_gray.png')
+            pg.evaluate("S.flatTheme='outline';buildBaseLayers();setBase('sat')"); time.sleep(1); pg.screenshot(path=OUT + '/04_sat.png')
             pg.evaluate("setBase('map')")
         if 'air' in which:
             pg.fill('#search', 'KLAX'); pg.press('#search', 'Enter'); time.sleep(1.5); pg.screenshot(path=OUT + '/05_klax.png')
@@ -110,12 +110,12 @@ def extra():
         rep = pg.eval_on_selector('#reportTxt', 'e=>e.textContent'); print('\n'.join([l for l in rep.split('\n') if 'loss' in l.lower() or 'Antenna height' in l or 'Received' in l]))
         pg.click('#unitSeg button[data-u=ft]'); time.sleep(0.5); pg.screenshot(path=OUT + '/11_air_ft.png')
         pg.click('#unitSeg button[data-u=m]')
-        # jammer coverage
+        # field-strength coverage with a low-power ground source
         pg.evaluate("S.rx.mode='agl';S.rx.h=2;S.tx.h=10;S.pwrW=1;S.txGain=0;S.cov.radius=25;S.cov.maxSteps=150;S.cov.rxH=2;S.cov.rxMode='agl';saveState()")
-        pg.evaluate("S.f=1575.42;S.cov.display='js';S.bwKHz=2046;COV.run()")
+        pg.evaluate("S.f=1575.42;S.cov.display='field';COV.run()")
         pg.wait_for_function("COV.cur && document.getElementById('statusTxt').textContent==='ready'", timeout=180000); time.sleep(0.5)
         pg.evaluate("map.setView([S.tx.lat,S.tx.lon],10)"); time.sleep(1)
-        pg.screenshot(path=OUT + '/12_jam.png')
+        pg.screenshot(path=OUT + '/12_field.png')
         pg.evaluate("openDrawer('info')"); time.sleep(0.5); print(pg.eval_on_selector('#infoTab', 'e=>e.innerText')[:800])
         with pg.expect_download() as d: pg.evaluate("TP.exportKMZ(true)")
         z = zipfile.ZipFile(d.value.path()); print('KMZ', z.namelist(), [len(z.read(n)) for n in z.namelist()])

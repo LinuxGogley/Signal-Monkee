@@ -55,7 +55,6 @@ var STATIC = {
     ['Meshtastic US LongFast', 906.875, 250, 0.158, 2.15, -136, 1, 'SF11 BW250 CR4/5, 22 dBm'],
     ['Meshtastic EU LongFast', 869.525, 250, 0.025, 2.15, -136, 1, 'SF11 BW250, 14 dBm (ERP limits)'],
     ['LoRaWAN US915 SF10', 915.0, 125, 0.1, 2.15, -132, 1, ''],
-    ['GPS L1 C/A (jammer study)', 1575.42, 2046, 1, 0, -130, 1, 'GPS L1 signal ≈ −128.5 dBm min'],
     ['S-band telemetry / C2', 2250.0, 5000, 5, 6, -100, 1, '2200–2290 MHz'],
     ['2.4 GHz datalink (20 MHz)', 2437.0, 20000, 1, 3, -82, 1, 'ISM'],
     ['5.8 GHz datalink (20 MHz)', 5800.0, 20000, 1, 5, -82, 1, 'ISM/UNII-3'],

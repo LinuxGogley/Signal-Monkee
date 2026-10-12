@@ -124,3 +124,15 @@ body.opmode #log{height:78px}
 .leaflet-bottom.leaflet-right .leaflet-control-scale{margin-bottom:6px}
 #legend{bottom:12px}
 #legend .lg{max-height:100%}
+.bigbtns{gap:6px}
+.bigbtns .btn{white-space:nowrap;padding:5px 9px}
+
+/* inline icons */
+.ico{width:15px;height:15px;flex:none;vertical-align:-3px}
+.btn,.hbtn{display:inline-flex;align-items:center;gap:5px}
+.bigbtns .btn{justify-content:center}
+.bigbtns .ico{width:16px;height:16px}
+.acc>summary .ic{display:inline-flex;align-items:center;justify-content:center}
+.acc>summary .ic .ico{width:18px;height:18px;color:var(--mut)}
+.acc[open]>summary .ic .ico{color:var(--acc)}
+#clrMenu .btn{justify-content:flex-start}

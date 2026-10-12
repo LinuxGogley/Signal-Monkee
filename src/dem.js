@@ -22,6 +22,21 @@ var DEM = (function () {
   }
   function idbGet(store, key) { return db().then(function (d) { if (!d) return null; return new Promise(function (res) { try { var r = d.transaction(store).objectStore(store).get(key); r.onsuccess = function () { res(r.result || null); }; r.onerror = function () { res(null); }; } catch (e) { res(null); } }); }); }
   function idbPut(store, key, val) { return db().then(function (d) { if (!d) return; return new Promise(function (res) { try { var t = d.transaction(store, 'readwrite'); t.objectStore(store).put(val, key); t.oncomplete = res; t.onerror = res; } catch (e) { res(); } }); }); }
+  /* bulk write [[key, value], ...] in chunks of 400 per transaction */
+  function idbPutMany(store, pairs, onProg) {
+    return db().then(function (d) {
+      if (!d) return;
+      var i = 0;
+      function chunk() {
+        if (i >= pairs.length) return Promise.resolve();
+        var part = pairs.slice(i, i + 400); i += part.length;
+        return new Promise(function (res) {
+          try { var t = d.transaction(store, 'readwrite'), os = t.objectStore(store); part.forEach(function (p) { os.put(p[1], p[0]); }); t.oncomplete = res; t.onerror = res; t.onabort = res; } catch (e) { res(); }
+        }).then(function () { if (onProg) onProg(i, pairs.length); return chunk(); });
+      }
+      return chunk();
+    });
+  }
   function idbCount(store) { return db().then(function (d) { if (!d) return 0; return new Promise(function (res) { try { var r = d.transaction(store).objectStore(store).count(); r.onsuccess = function () { res(r.result); }; r.onerror = function () { res(0); }; } catch (e) { res(0); } }); }); }
   function idbClear(store) { return db().then(function (d) { if (!d) return; return new Promise(function (res) { var t = d.transaction(store, 'readwrite'); t.objectStore(store).clear(); t.oncomplete = res; }); }); }
 
@@ -168,5 +183,5 @@ var DEM = (function () {
   function clearMem() { tiles.clear(); notify(); }
   return { cfg: cfg, stats: stats, ensure: ensure, elev: elev, zoomFor: zoomFor, addHGT: addHGT, unzip: unzip, hgtList: function () { return hgt; }, removeHGT: function (i) { hgt.splice(i, 1); notify(); },
     onChange: function (f) { listeners.push(f); }, resolution: resolution, setZoom: setZoom, getZoom: function () { return activeZ; }, clearMem: clearMem, memCount: function () { return tiles.size; },
-    idbGet: idbGet, idbPut: idbPut, idbCount: idbCount, idbClear: idbClear, lon2x: lon2x, lat2y: lat2y, loadTile: loadTile, tilePix: tilePix };
+    idbGet: idbGet, idbPut: idbPut, idbPutMany: idbPutMany, tileURL: tileURL, idbCount: idbCount, idbClear: idbClear, lon2x: lon2x, lat2y: lat2y, loadTile: loadTile, tilePix: tilePix };
 })();
