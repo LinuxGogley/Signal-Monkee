@@ -151,25 +151,14 @@ var RF = (function () {
     }).catch(function (e) { prog(false); status('error'); log('Path analysis failed: ' + e.message, 'e'); console.error(e); });
   }
   function logP2P(A) {
-    if (A.losOnly) {
-      var wo = OPS.worstObs(A);
-      log('— LOS ' + esc(A.tx.name) + ' → ' + esc(A.rx.name) + ': ' + fx(A.D / 1000, 2) + ' km (' + fx(A.D / 1852, 1) + ' NM) @ ' + fx(A.az, 0) + '°', 'g');
-      log(A.los0 ? 'Line of sight CLEAR — ' + hShort(A.minClr) + ' above terrain at the closest point' : 'Line of sight BLOCKED' + (wo ? ' by terrain ' + fx(wo.peak * A.xi / 1852, 1) + ' NM from Tx (' + hShort(A.z[wo.peak]) + ' MSL)' : '') + '; Rx needs ' + hShort(A.rxAltNeed) + ' MSL', A.los0 ? 'g' : 'e');
-      return;
-    }
-    if (A.op) {
-      var v0 = OPS.verdict(A);
-      log('— ' + esc(A.tx.name) + ' → ' + esc(A.rx.name) + ': ' + fx(A.D / 1000, 2) + ' km (' + fx(A.D / 1852, 1) + ' NM) @ ' + fx(A.az, 0) + '°', 'g');
-      log('Line of sight: ' + (A.los0 ? 'CLEAR' : 'BLOCKED by terrain') + ' · RSSI ' + fx(A.Prx, 1) + ' dBm (min ' + fx(A.sens, 0) + ')', A.los0 ? 'g' : 'e');
-      log('Result: ' + v0.text + (v0.reason ? ' — ' + v0.reason : ''), v0.pass ? 'g' : 'e');
-      return;
-    }
-    log('— Path ' + esc(A.tx.name) + ' → ' + esc(A.rx.name) + ': ' + fx(A.D / 1000, 2) + ' km @ ' + fx(A.az, 1) + '°', 'g');
-    log((A.minClr >= 0 ? 'Clear LOS' : 'Obstructed (' + A.obs.length + ' obstruction' + (A.obs.length === 1 ? '' : 's') + ')') + '; worst F1 clearance ' + fx(A.minRatio * 100, 0) + '%');
+    var wo = OPS.worstObs(A), v = OPS.verdict(A);
+    log('— ' + (A.losOnly ? 'LOS ' : 'Path ') + esc(A.tx.name) + ' → ' + esc(A.rx.name) + ': ' + dDual(A.D, 2) + ' @ ' + fx(A.az, 0) + '°', 'g');
+    log('Line of sight ' + (A.los0 ? 'CLEAR — ' + hShort(A.minClr) + ' above terrain at the closest point' : 'BLOCKED' + (wo ? ' by terrain ' + dU(wo.peak * A.xi, 1) + ' from Tx (' + hShort(A.z[wo.peak]) + ' MSL)' : '') + '; Rx needs ' + hShort(A.rxAltNeed) + ' MSL'), A.los0 ? 'g' : 'e');
+    if (A.losOnly) return;
+    log('Worst first-Fresnel clearance ' + fx(A.minRatio * 100, 0) + '% (' + (A.minRatio >= 0.6 ? 'OK' : 'below 60%') + ')');
     if (A.reqModel !== A.model) log('ITM not valid for this geometry (terminal > 3 km or < 0.5 m) — using ' + modelName(A.model) + '.', 'w');
-    log('Path loss ' + modelName(A.model) + ': ' + fx(A.Lsel, 1) + ' dB  (FSPL ' + fx(A.Lfs, 1) + ')');
-    log('Rx level: ' + fx(A.Prx, 1) + ' dBm, SNR ' + fx(A.snr, 1) + ' dB, margin ' + sgn(A.margin, 1) + ' dB', A.margin >= 0 ? 'g' : 'e');
-    var vd = OPS.verdict(A); log('Verdict: ' + vd.text + ' (margin ' + sgn(vd.margin, 1) + ' dB vs required ' + fx(vd.reqMargin, 0) + ' dB)', vd.pass ? 'g' : 'e');
+    log('Path loss ' + modelName(A.model) + ' ' + fx(A.Lsel, 1) + ' dB · RSSI ' + fx(A.Prx, 1) + ' dBm vs ' + (A.op ? 'minimum ' : 'sensitivity ') + fx(v.required, 1) + ' dBm · margin ' + sgn(v.margin, 1) + ' dB', v.margin >= 0 ? 'g' : 'e');
+    log('Result: ' + v.text + (v.reason ? ' — ' + v.reason : ''), v.pass ? 'g' : v.marginal ? 'w' : 'e');
   }
   function modelName(m) { return { oplos: 'Line of sight + free space', itm: 'Longley-Rice ITM', p526: 'ITU-R P.526 Deygout', hata: 'Okumura-Hata/COST-231', fspl: 'Free space', los: 'LOS/free space' }[m] || m; }
   var ITMW = { 0x1: 'Tx height near limits', 0x2: 'Rx height near limits', 0x4: 'Frequency near limits (40 MHz–10 GHz)', 0x8: 'Path distance near upper limit', 0x10: 'Path distance large', 0x20: 'Path distance near lower limit', 0x40: 'Path < 1 km', 0x80: 'Tx horizon angle large', 0x100: 'Rx horizon angle large', 0x200: 'Tx horizon < 0.1× smooth earth', 0x400: 'Rx horizon < 0.1× smooth earth', 0x800: 'Tx horizon > 3× smooth earth', 0x1000: 'Rx horizon > 3× smooth earth', 0x2000: 'Extreme variability', 0x4000: 'Low surface refractivity' };
@@ -179,7 +168,7 @@ var RF = (function () {
   function report(A) {
     var L = [], t = A.tx, r = A.rx, pad = function (s, n) { s = String(s); while (s.length < n) s += ' '; return s; };
     var line = '─'.repeat(78);
-    L.push('Signal Monkee ' + VERSION + ' — Point-to-Point Path Analysis (SPLAT!-style)');
+    L.push('Signal Monkee ' + VERSION + ' — ' + (A.losOnly ? 'Line-of-Sight Planning (terrain only)' : 'Point-to-Point Path Analysis (SPLAT!-style)'));
     L.push('Generated ' + nowISO() + '   Terrain: ' + (DEM.hgtList().length ? 'SRTM .hgt' : 'AWS Terrain Tiles z' + A.zoom) + ' (~' + fx(A.res, 0) + ' m), profile ' + (A.n + 1) + ' pts @ ' + fx(A.xi, 1) + ' m');
     L.push(line);
     function site(s, z0, h, label, az, el) {
@@ -190,14 +179,38 @@ var RF = (function () {
       L.push('  Azimuth to other end:   ' + fx(az, 2) + '° true');
       L.push('  ' + (el >= 0 ? 'Elevation' : 'Depression') + ' angle:        ' + fx(Math.abs(el), 4) + '°');
     }
+    function clearance() {
+      var rf = !A.losOnly, du = IMP() ? 1852 : 1000, dn = IMP() ? ' NM' : ' km', hu = function (m) { return IMP() ? fx(m / 0.3048, 0) + ' ft' : fx(m, 1) + ' m'; };
+      L.push(line);
+      L.push('Terrain clearance:');
+      L.push('  Line of sight:               ' + (A.los0 ? 'CLEAR — closest terrain ' + hu(A.minClr) + ' below the line' : 'BLOCKED — terrain up to ' + hu(-A.minClr) + ' above the line'));
+      if (rf) L.push('  Worst first-Fresnel clearance: ' + fx(A.minRatio * 100, 1) + '% at ' + dStr(A.minRatioI * A.xi));
+      if (!A.obs.length) L.push('  No obstructions to LOS path due to terrain were detected.');
+      else {
+        L.push('  Obstructions (between Tx and Rx), k = ' + fx(A.k, 3) + ':');
+        L.push('    ' + pad('Latitude', 12) + pad('Longitude', 13) + pad('Dist from Tx', 16) + pad('Terrain AMSL', 15) + 'Above the line');
+        A.obs.slice(0, 60).forEach(function (o) {
+          var i = o.peak; L.push('    ' + pad(fx(A.P.lat[i], 5), 12) + pad(fx(A.P.lon[i], 5), 13) + pad(fx(i * A.xi / du, 3) + dn, 16) + pad(hu(A.z[i]), 15) + hu(-A.clr[i]));
+        });
+        if (A.obs.length > 60) L.push('    … ' + (A.obs.length - 60) + ' more');
+      }
+      L.push('');
+      L.push('Antenna height requirements (other end fixed):');
+      L.push('  Tx AGL to clear all obstructions:     ' + hStr(A.req.tx0, 1));
+      if (rf) { L.push('  Tx AGL for 60% first Fresnel zone:    ' + hStr(A.req.tx60, 1)); L.push('  Tx AGL for 100% first Fresnel zone:   ' + hStr(A.req.tx100, 1)); }
+      L.push('  Rx AGL to clear all obstructions:     ' + hStr(A.req.rx0, 1) + '  (' + hStr(A.rxAltNeed, 0) + ' MSL)');
+      if (rf) { L.push('  Rx AGL for 60% first Fresnel zone:    ' + hStr(A.req.rx60, 1)); L.push('  Rx AGL for 100% first Fresnel zone:   ' + hStr(A.req.rx100, 1)); }
+      if (!rf) { L.push(line); L.push('Bare-earth terrain only (no buildings or vegetation). No radio parameters are used in line-of-sight planning.'); }
+    }
     site(t, A.z[0], A.htx, 'Transmitter', A.az, A.elevAng);
     if (A.hzI) { L.push('  Tx horizon (along path): ' + fx(A.hzA, 4) + '° at ' + dStr(A.hzI * A.xi)); }
     L.push('');
     site(r, A.z[A.n], A.hrx, 'Receiver', A.azR, A.elevAngR);
     L.push(line);
     L.push('Distance:                 ' + dStr(A.D));
-    L.push('Frequency:                ' + fx(S.f, 4) + ' MHz   (λ = ' + fx(A.lam, 4) + ' m)');
+    if (!A.losOnly) L.push('Frequency:                ' + fx(S.f, 4) + ' MHz   (λ = ' + fx(A.lam, 4) + ' m)');
     L.push('Effective earth radius:   ' + fx(A.ae / 1000, 0) + ' km  (k = ' + fx(A.k, 3) + ')');
+    if (A.losOnly) { clearance(); return L.join('\n'); }   // LOS planning: terrain only, no radio sections
     L.push('');
     L.push('Longley-Rice / ITM parameters:');
     L.push('  Earth dielectric constant:   ' + fx(S.itm.eps, 3));
@@ -232,26 +245,7 @@ var RF = (function () {
     L.push('  Noise floor (' + S.bwKHz + ' kHz, NF ' + S.rxNF + '): ' + fx(A.N, 2) + ' dBm');
     L.push('  SNR:                         ' + fx(A.snr, 2) + ' dB');
     L.push('  Rx sensitivity / margin:     ' + fx(A.sens, 2) + ' dBm / ' + sgn(A.margin, 2) + ' dB  ' + (A.margin >= 0 ? '[LINK OK]' : '[BELOW SENSITIVITY]'));
-    L.push(line);
-    L.push('Terrain clearance:');
-    L.push('  Minimum LOS clearance:       ' + fx(A.minClr, 1) + ' m;  worst first-Fresnel clearance ' + fx(A.minRatio * 100, 1) + '% at ' + dStr(A.minRatioI * A.xi));
-    if (!A.obs.length) L.push('  No obstructions to LOS path due to terrain were detected.');
-    else {
-      L.push('  Obstructions (between Tx and Rx), k = ' + fx(A.k, 3) + ':');
-      L.push('    ' + pad('Latitude', 12) + pad('Longitude', 13) + pad('Dist from Tx', 16) + pad('Terrain AMSL', 15) + 'Penetration');
-      A.obs.slice(0, 60).forEach(function (o) {
-        var i = o.peak; L.push('    ' + pad(fx(A.P.lat[i], 5), 12) + pad(fx(A.P.lon[i], 5), 13) + pad(fx(i * A.xi / 1000, 3) + ' km', 16) + pad(fx(A.z[i], 1) + ' m', 15) + fx(-A.clr[i], 1) + ' m');
-      });
-      if (A.obs.length > 60) L.push('    … ' + (A.obs.length - 60) + ' more');
-    }
-    L.push('');
-    L.push('Antenna height requirements (other end fixed):');
-    L.push('  Tx AGL to clear all obstructions:     ' + hStr(A.req.tx0, 1));
-    L.push('  Tx AGL for 60% first Fresnel zone:    ' + hStr(A.req.tx60, 1));
-    L.push('  Tx AGL for 100% first Fresnel zone:   ' + hStr(A.req.tx100, 1));
-    L.push('  Rx AGL to clear all obstructions:     ' + hStr(A.req.rx0, 1));
-    L.push('  Rx AGL for 60% first Fresnel zone:    ' + hStr(A.req.rx60, 1));
-    L.push('  Rx AGL for 100% first Fresnel zone:   ' + hStr(A.req.rx100, 1));
+    clearance();
     L.push(line);
     L.push('Notes: ITM is the NTIA/ITS reference algorithm (validated bit-for-bit in this port). Terrain is bare-earth; add clutter loss');
     L.push('for foliage/buildings. Airport/ATC frequency data: OurAirports (community) — verify against FAA Chart Supplement before use.');
@@ -274,7 +268,7 @@ var RF = (function () {
     g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
     var A = last;
     if (!A) { g.fillStyle = C.axis; g.font = '13px system-ui'; g.fillText('Place Tx and Rx, then press Path (or P) to compute the terrain profile.', 20, 30); return; }
-    var view = A.op ? 'curved' : ($('pfView') || {}).value || 'curved', rel = view === 'fresnel', curved = view !== 'flat', showF = !A.op;
+    var view = A.op ? 'curved' : ($('pfView') || {}).value || 'curved', rel = view === 'fresnel', curved = view !== 'flat', showF = !A.losOnly;   // Fresnel zone drawn whenever there is a frequency (Engineer and Operator)
     var frMax = 0; for (var q = 0; q <= A.n; q++) if (A.fr[q] > frMax) frMax = A.fr[q];
     var n = A.n, ml = 58, mr = 16, mt = 14, mb = 30, pw = W - ml - mr, ph = H - mt - mb;
     var yT = new Float64Array(n + 1), yLos = A.los, ymin = 1e9, ymax = -1e9;
@@ -291,7 +285,7 @@ var RF = (function () {
     var X = function (i) { return ml + i / n * pw; }, Y = function (v) { return mt + (1 - (v - ymin) / (ymax - ymin)) * ph; };
     // grid
     g.strokeStyle = C.grid; g.lineWidth = 1; g.font = '11px ' + getComputedStyle(document.body).getPropertyValue('--mono'); g.fillStyle = C.axis;
-    var ystep = niceStep((ymax - ymin) / 6);
+    var hk = IMP() ? 0.3048 : 1, ystep = niceStep((ymax - ymin) / hk / 6) * hk;   // round steps in the display unit (ft or m)
     g.save(); g.beginPath(); g.rect(ml, mt, pw, ph); g.clip();
     var curvedGrid = curved && !rel, v; if (curvedGrid) g.strokeStyle = C.gridC;
     for (v = Math.floor((ymin - (curvedGrid ? A.bulge[Math.round(n / 2)] : 0)) / ystep) * ystep; v <= ymax; v += ystep) {
@@ -302,9 +296,9 @@ var RF = (function () {
     }
     g.restore();
     for (v = Math.ceil(ymin / ystep) * ystep; v <= ymax; v += ystep) g.fillText(S.units.h === 'ft' ? fx(v / 0.3048, 0) : fx(v, 0), 4, Y(v) + 4);
-    var Dk = A.D / 1000, xstep = niceStep(Dk / 8);
+    var du = IMP() ? 1852 : 1000, Dk = A.D / du, xstep = niceStep(Dk / 8);   // distance axis: km, or NM with feet
     for (var dk = 0; dk <= Dk + 1e-9; dk += xstep) { var xx = ml + dk / Dk * pw; g.beginPath(); g.moveTo(xx, mt); g.lineTo(xx, mt + ph); g.stroke(); g.fillText(fx(dk, xstep < 1 ? 1 : 0), xx - 8, H - 12); }
-    g.fillText((S.units.h === 'ft' ? 'ft' : 'm') + (rel ? ' vs LOS' : ' AMSL'), 4, 10); g.fillText('km', W - mr - 14, H - 2);
+    g.fillText((IMP() ? 'ft' : 'm') + (rel ? ' vs LOS' : ' AMSL'), 4, 10); g.textAlign = 'right'; g.fillText(IMP() ? 'NM' : 'km', W - mr, H - 2); g.textAlign = 'left';
     if (tgt && tgt.light) { g.strokeStyle = C.frame; g.lineWidth = 1; g.strokeRect(ml + .5, mt + .5, pw - 1, ph - 1); }
     // terrain
     var tvals = curved ? yT : A.z;
@@ -357,14 +351,15 @@ var RF = (function () {
     if (showF) { g.strokeStyle = C.worst; g.beginPath(); g.arc(X(A.minRatioI), Y(tvals[A.minRatioI]), 6, 0, 7); g.stroke(); }
     // legend
     g.font = '11px system-ui'; var lx = ml + 8, ly = mt + 14;
-    (showF ? [[C.ok, 'LOS (' + (A.minClr >= 0 ? 'clear' : 'obstructed') + ')'], [C.frLine, '1st Fresnel'], [C.worst, '60% F1 / worst point'], [C.obs, 'obstruction']] : [[C.ok, 'Line of sight (' + (A.minClr >= 0 ? 'clear' : 'blocked') + ')'], [C.obs, 'terrain blocking']]).forEach(function (it) { g.fillStyle = it[0]; g.fillRect(lx, ly - 8, 12, 3); g.fillStyle = C.text; g.fillText(it[1], lx + 16, ly - 4); lx += g.measureText(it[1]).width + 34; });
+    (showF ? [[C.ok, 'LOS (' + (A.minClr >= 0 ? 'clear' : 'obstructed') + ')'], [C.frLine, '1st Fresnel'], [C.worst, '60% F1 / worst point'], [C.obs, 'terrain blocking']] : [[C.ok, 'Line of sight (' + (A.minClr >= 0 ? 'clear' : 'blocked') + ')'], [C.obs, 'terrain blocking']]).forEach(function (it) { g.fillStyle = it[0]; g.fillRect(lx, ly - 8, 12, 3); g.fillStyle = C.text; g.fillText(it[1], lx + 16, ly - 4); lx += g.measureText(it[1]).width + 34; });
     g.fillStyle = C.text; g.textAlign = 'right';
-    g.fillText((A.losOnly ? fx(A.D / 1000, 2) + ' km (' + fx(A.D / 1852, 1) + ' NM) · k=' + fx(A.k, 2) + ' · terrain line of sight ' + (A.los0 ? 'clear' : 'blocked') : A.op ? fx(A.D / 1000, 2) + ' km (' + fx(A.D / 1852, 1) + ' NM) · ' + fx(S.f, 3) + ' MHz · RSSI ' + fx(A.Prx, 1) + ' dBm (min ' + fx(A.sens, 0) + ')' : fx(A.D / 1000, 2) + ' km · ' + fx(S.f, 3) + ' MHz · k=' + fx(A.k, 2) + ' · ' + modelName(A.model) + ' ' + fx(A.Lsel, 1) + ' dB · Rx ' + fx(A.Prx, 1) + ' dBm'), W - mr - 4, mt + 10);
+    g.fillText(dU(A.D, 2) + ' · ' + (A.losOnly ? 'k=' + fx(A.k, 2) + ' · terrain line of sight ' + (A.los0 ? 'clear' : 'blocked')
+      : fx(S.f, 3) + ' MHz · k=' + fx(A.k, 2) + ' · ' + modelName(A.model) + ' ' + fx(A.Lsel, 1) + ' dB · RSSI ' + fx(A.Prx, 1) + ' dBm (' + (A.op ? 'min ' : 'sens ') + fx(A.sens, 0) + ')'), W - mr - 4, mt + 10);
     g.textAlign = 'left';
     // hover
     if (!tgt && hoverI >= 0 && hoverI <= n) {
       var hx = X(hoverI); g.strokeStyle = '#fff8'; g.lineWidth = 1; g.beginPath(); g.moveTo(hx, mt); g.lineTo(hx, mt + ph); g.stroke();
-      var txt = [fx(hoverI * A.xi / 1000, 3) + ' km', 'terrain ' + hShort(A.z[hoverI]), 'clearance ' + hShort(A.clr[hoverI]), A.op ? (A.clr[hoverI] >= 0 ? 'line of sight clear' : 'blocked here') : 'F1 r=' + fx(A.fr[hoverI], 1) + ' m (' + fx(A.fr[hoverI] > 0 ? A.clr[hoverI] / A.fr[hoverI] * 100 : 0, 0) + '%)', fx(A.P.lat[hoverI], 5) + ', ' + fx(A.P.lon[hoverI], 5)];
+      var txt = [dU(hoverI * A.xi, 2), 'terrain ' + hShort(A.z[hoverI]), 'clearance ' + hShort(A.clr[hoverI]), A.losOnly ? (A.clr[hoverI] >= 0 ? 'line of sight clear' : 'blocked here') : 'F1 r=' + hShort(A.fr[hoverI]) + ' (' + fx(A.fr[hoverI] > 0 ? A.clr[hoverI] / A.fr[hoverI] * 100 : 0, 0) + '%)', fx(A.P.lat[hoverI], 5) + ', ' + fx(A.P.lon[hoverI], 5)];
       var bx = hx + 10 > W - 170 ? hx - 170 : hx + 10; g.fillStyle = 'rgba(15,17,20,.9)'; g.fillRect(bx, mt + 20, 160, txt.length * 15 + 8);
       g.fillStyle = '#e4e8ec'; txt.forEach(function (t, j) { g.fillText(t, bx + 6, mt + 36 + j * 15); });
     }
@@ -393,7 +388,8 @@ var RF = (function () {
   function render() {
     if (OPM()) return OPMODE.render();
     var gsel = STATIC.ground.map(function (g, i) { return [i, g[0] + ' (ε' + g[1] + ', σ' + g[2] + ')']; });
-    var h = acc(ico('pin'), 'Site / Tx',
+    var h = '<div id="engResult">' + (last && !last.op ? OPS.resultCard(last) : '') + '</div>';   // PASS/FAIL at the top, as in Operator mode
+    h += acc(ico('pin'), 'Site / Tx',
       F('Name', 'tx.name', { text: 1 }) + F('Latitude', 'tx.lat') + F('Longitude', 'tx.lon') + F('Antenna height', 'tx.h', { u: 'h', title: 'Above ground level' }) +
       '<div class="row"><button class="btn sm" data-ico="pin" onclick="setPick(\'tx\')">Pick on map</button><button class="btn sm" data-ico="zoom" onclick="map.setView([S.tx.lat,S.tx.lon],12)">Zoom to</button><button class="btn sm" data-ico="swap" onclick="RF.swap()">Swap Tx/Rx</button></div>', true);
     h += acc(ico('signal'), 'Signal',

@@ -10,7 +10,7 @@ function renderTerrain() {
   h += '<div class="f"><label>Terrain tile URL</label><input id="tUrl" value="' + esc(DEM.cfg.url) + '"></div><div class="note">Any Terrarium-encoded PNG source works (e.g. a local tile server for air-gapped use).</div>';
   h += '<div class="row"><button class="btn sm" id="tHgt">Load SRTM .hgt / .zip</button><button class="btn sm" id="tPre">Pre-cache view for offline</button><button class="btn sm" id="tClrM">Clear memory</button><button class="btn sm" id="tClrI">Clear offline cache</button></div>';
   if (hl.length) h += '<table class="t">' + hl.map(function (x, i) { return '<tr><td>' + esc(x.name) + '</td><td>' + x.lat + ', ' + x.lon + '</td><td>' + (x.n === 3601 ? '1″' : x.n === 1201 ? '3″' : x.n) + '</td><td><a class="lnk" onclick="DEM.removeHGT(' + i + ');rerender()" title="Remove">' + ico('close') + '</a></td></tr>'; }).join('') + '</table>';
-  h += '<h4>Units & behaviour</h4><div class="row">Heights: <div class="seg" id="unitSeg2"><button data-u="m" class="' + (S.units.h === 'm' ? 'on' : '') + '">metres</button><button data-u="ft" class="' + (S.units.h === 'ft' ? 'on' : '') + '">feet</button></div></div>';
+  h += '<h4>Units & behaviour</h4><div class="row">Units: <div class="seg" id="unitSeg2"><button data-u="m" class="' + (S.units.h === 'm' ? 'on' : '') + '">metres · km</button><button data-u="ft" class="' + (S.units.h === 'ft' ? 'on' : '') + '">feet · NM</button></div></div>';
   h += '<div class="row"><button class="btn sm" id="resetAll">Reset all settings</button></div>';
   return h;
 }
@@ -49,7 +49,8 @@ function loadHGT() {
 function setUnits(u) {
   S.units.h = u; saveState();
   document.querySelectorAll('#unitSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.u === u); });
-  rerender(); RF.drawProfile(); TP.renderTable();
+  rerender(); RF.drawProfile(); TP.renderTable(); OPS.refreshSummary();
+  if (RF.last) $('reportTxt').textContent = RF.report(RF.last);   // feet → reports in NM and ft; metres → km and m
 }
 function renderHelp() {
   return '<div style="display:flex;align-items:center;gap:12px"><div style="width:72px;height:72px">'+MASCOT_SVG+'</div><div><h3 style="margin:0">Signal Monkee — quick guide</h3><div class="mini">Mascot: Signal Monkee, ears up and listening</div></div></div>' +
@@ -91,8 +92,9 @@ function boot() {
   document.querySelectorAll('#unitSeg button').forEach(function (b) { b.classList.toggle('on', b.dataset.u === S.units.h); });
   $('unitSeg').onclick = function (e) { var b = e.target.closest('button'); if (b) setUnits(b.dataset.u); };
   $('baseSeg').onclick = function (e) { var b = e.target.closest('button'); if (b) setBase(b.dataset.b); };
-  $('bP2P').onclick = function () { RF.runP2P(); };
-  $('bCov').onclick = function () { COV.run(); };
+  // bottom buttons: RF analysis on the RF panel, terrain-only LOS on the LOS panel (hidden on other panels)
+  $('bP2P').onclick = function () { runPath(); };
+  $('bCov').onclick = function () { runCoverage(); };
   $('clrRes').onclick = function (e) { e.stopPropagation(); $('clrMenu').classList.toggle('hidden'); };
   $('clrMenu').onclick = function (e) { var b = e.target.closest('button'); if (!b) return; $('clrMenu').classList.add('hidden'); if (b.dataset.c !== 'sites') OPS.clearResults(); if (b.dataset.c !== 'res') clearSites(); if (b.dataset.c === 'all') { SAT.clearPoint(); if (curPanel === 'gnss' || curPanel === 'sat') rerender(); } };
   document.addEventListener('click', function (e) { if (!e.target.closest('#clrMenu')) $('clrMenu').classList.add('hidden'); });
@@ -105,7 +107,7 @@ function boot() {
   document.addEventListener('keydown', function (e) {
     if (/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName) || e.ctrlKey || e.metaKey || e.altKey) return;
     var k = e.key.toLowerCase();
-    if (k === 'p') RF.runP2P(); else if (k === 'c') COV.run(); else if (k === 't') setPick('tx'); else if (k === 'r') setPick('rx');
+    if (k === 'p') runPath(); else if (k === 'c') runCoverage(); else if (k === 't') setPick('tx'); else if (k === 'r') setPick('rx');
     else if (k === 'a') setPick('tp'); else if (k === 'g') setPick('gn'); else if (k === 'b') cycleBase(); else if (k === 'escape' && pickMode) setPick(pickMode);
   });
   DEM.onChange(function (st) { var e = $('tStat'); if (e) e.textContent = st.fetched + ' / ' + st.cached + ' / ' + st.failed; var m = $('tMem'); if (m) m.textContent = DEM.memCount(); });
@@ -113,7 +115,8 @@ function boot() {
   RF.logBudget();
   status('loading data…');
   loadEmbedded().then(function () {
-    LAY.initLayers(); TP.draw(); refreshVectors(); refreshCities();
+    LAY.initLayers(); TP.draw();
+    buildBaseLayers(); setBase(S.base);   // land polygons and coast data arrive with the embedded data: rebuild the Contrast map now
     status('ready');
     log('Loaded ' + DATA.airports.length + ' airports, ' + DATA.navaids.length + ' navaids, ' + DATA.cities.length + ' places.');
     return SAT.loadCached();

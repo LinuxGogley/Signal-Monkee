@@ -14,12 +14,12 @@ var LOSP = (function () {
       F('Height is', 'rx.mode', { sel: [['agl', 'Height above ground (AGL)'], ['msl', 'Altitude above sea level (MSL)']] }) + F(S.rx.mode === 'msl' ? 'Altitude' : 'Height', 'rx.h', { u: 'h' }) +
       '<div class="row"><button class="btn sm" data-ico="pin" onclick="setPick(\'rx\')">Pick on map</button></div>';
     h += '<h4>Earth curvature</h4>' + F('Model', 'los.earth', { sel: [['std', 'Standard radio horizon (4/3 earth)'], ['geo', 'Geometric / visual (true earth)']] });
-    h += '<div class="row" style="margin-top:10px"><button class="btn pri" data-ico="eye" id="losRun">Check line of sight</button></div>';
     h += '<h4>Viewshed map (from point A)</h4>' +
       '<div class="f"><label>Radius</label><div class="pair"><input id="losRkm" type="number" step="any" title="km"><input id="losRnm" type="number" step="any" title="NM"></div></div><div class="note" style="text-align:right;margin-top:-2px">km ⇄ NM</div>' +
       F('Target height is', 'los.rxMode', { sel: [['agl', 'Height above ground (AGL)'], ['msl', 'Altitude above sea level (MSL)']] }) + F(S.los.rxMode === 'msl' ? 'Target altitude' : 'Target height', 'los.rxH', { u: 'h' }) +
       CK('Shade hidden areas red', 'los.showHidden') +
-      '<div class="row"><button class="btn pri" data-ico="map" id="losMap">Viewshed map</button><button class="btn sm" data-ico="clear" onclick="COV.clear()">Clear map</button><button class="btn sm" data-ico="download" onclick="COV.exportKMZ()">Google Earth KMZ</button></div>';
+      '<div class="note">Press <b>Path</b> to check line of sight between A and B, or <b>Coverage</b> for the viewshed map from A (terrain only, no radio settings).</div>' +
+      '<div class="row"><button class="btn sm" data-ico="clear" onclick="COV.clear()">Clear map</button><button class="btn sm" data-ico="download" onclick="COV.exportKMZ()">Google Earth KMZ</button></div>';
     h += '<div class="note">Bare terrain: buildings and trees are not included. Radio range is not considered — use the RF panel for signal strength.</div>';
     return h;
   }
@@ -28,8 +28,6 @@ var LOSP = (function () {
     rk.value = +(+S.los.radius).toFixed(2); rn.value = +(S.los.radius / NM).toFixed(2);
     rk.onchange = function () { var v = parseFloat(rk.value); if (v > 0) { S.los.radius = v; rn.value = +(v / NM).toFixed(2); saveState(); } };
     rn.onchange = function () { var v = parseFloat(rn.value); if (v > 0) { S.los.radius = +(v * NM).toFixed(3); rk.value = +S.los.radius.toFixed(2); saveState(); } };
-    $('losRun').onclick = function () { RF.runP2P({ losOnly: true }); };
-    $('losMap').onclick = function () { COV.run({ losOnly: true }); };
   }
   watch('rx.mode', function () { if (curPanel === 'los') rerender(); });
   watch('los.rxMode', function () { if (curPanel === 'los') rerender(); });

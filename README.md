@@ -1,7 +1,5 @@
 # Signal Monkee
 
-<img width="1777" height="1003" alt="Example_Plot" src="https://github.com/user-attachments/assets/e17d8593-74f3-406e-a42c-dd16f57880a6" />
-
 A terrain-aware RF path-link and coverage tool that runs entirely in a web browser, in the spirit of [SPLAT!](https://www.qsl.net/kd2bd/splat.html). It does:
 
 - **Point-to-point path analysis:** terrain profile with earth curvature, Fresnel zones, obstructions, required antenna heights, link budget, and a pass/fail verdict.
@@ -113,13 +111,18 @@ Operator mode reuses the same engine but changes four things, all via `OPM()` ch
 ### LOS planning (`app_los.js`)
 
 `RF.runP2P({ losOnly: true })` and `COV.run({ losOnly: true })` reuse the path and coverage engines, but ignore every radio parameter.
+- **Bottom buttons:** Save / Load / Path / Coverage show only on the RF and LOS panels (`runButtons()` in `app_core.js`). On the LOS panel, Path and Coverage (and the P / C keys) run the terrain-only check and viewshed via `runPath()` / `runCoverage()`.
 - **Earth curvature:** set separately in `S.los.earth`, either standard (4/3) or geometric (k = 1).
 - **Results:** `A.losOnly` switches the result card and PDF to **CLEAR / BLOCKED**, with the highest blocking terrain and the altitude needed for line of sight.
 - **Viewshed map:** colours the area visible from point A green, and optionally shades hidden areas red.
 
 ### Contrast-map themes (`THEMES` in `app_core.js`)
 
-Most themes fill the Natural Earth land polygons (`basemap.json → land`), so the Contrast map works offline everywhere. A transparent relief overlay, computed from terrain tiles, is drawn on top where terrain is available. **Grey relief** instead draws the opaque hillshade. To add a theme, add an entry with these keys:
+Most themes fill the Natural Earth land polygons (`basemap.json → land`), so the Contrast map works offline everywhere. A transparent relief overlay, computed from terrain tiles, is drawn on top where terrain is available. **Grey relief** instead draws the opaque hillshade.
+
+From zoom 8 (`COASTZ` in `app_core.js`) the coastline is trimmed to the terrain (`classify()`): starting from the Natural Earth land polygon, the sea is flooded in from outside it through terrain at or below ~2 m, then the shoreline is smoothed (opening + closing) and small low offshore fragments are dropped. Nothing is added outside the polygon, and land more than 15 km (`CORE_M`) inland is never trimmed, so the result is one clean, contiguous landmass that lines up with the relief, and low inland basins (Death Valley) stay land. Where no terrain is available the vector outline is drawn instead.
+
+To add a theme, add an entry with these keys:
 
 | Key | Meaning |
 |---|---|

@@ -296,7 +296,7 @@ var LAY = (function () {
     $('impNasr').onclick = function () { importFile('nasr'); };
     $('iCus').onclick = function () { importFile('custom'); }; $('cCus').onclick = function () { ext.custom = []; saveExt(); drawExt(); rerender(); };
   }
-  watch('layers.', function (k) { if (k === 'layers.artcc') drawARTCC(); else if (k === 'layers.gnssAreas') drawGnssAreas(); else if (k === 'layers.cities') refreshCities(); else if (k === 'layers.vectors') refreshVectors(); else refreshDynamic(); });
+  watch('layers.', function (k) { if (k === 'layers.artcc') drawARTCC(); else if (k === 'layers.gnssAreas') drawGnssAreas(); else if (k === 'layers.cities') refreshCities(); else if (k === 'layers.vectors') { refreshVectors(); if (shadeLayer) shadeLayer.redraw(); } else refreshDynamic(); });
   watch('mapStyle', function () { buildBaseLayers(); setBase('map'); });
   watch('satLabels', function () { buildBaseLayers(); setBase(S.base); });
   watch('satSrc', function () { buildBaseLayers(); setBase(S.base); });

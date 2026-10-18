@@ -8,6 +8,7 @@ READY = "document.getElementById('statusTxt').textContent==='ready'"
 SETUP = "S.tx.placed=true;S.rx.placed=true;S.tx.lat=36.019;S.tx.lon=-120.944;S.tx.h=10;S.rx.lat=36.141;S.rx.lon=-120.36;S.rx.mode='agl';S.rx.h=2;S.cov.radius=25;S.cov.maxSteps=120;S.cov.rxMode='agl';S.cov.rxH=2;saveState();placeMarkers();"
 def results(pg, mode):
     pg.evaluate("OPMODE.setMode('%s')" % mode); time.sleep(0.3)
+    pg.click('#rail button[data-p=rf]'); time.sleep(0.2)   # Path / Coverage buttons live on the RF panel
     pg.click('#bP2P'); pg.wait_for_function("RF.last && " + READY, timeout=60000)
     p2p = pg.evaluate("[RF.last.Prx.toFixed(3), RF.last.minClr.toFixed(2), RF.last.z[Math.floor(RF.last.n/2)].toFixed(2)]")
     pg.click('#bCov'); pg.wait_for_function("COV.cur && " + READY, timeout=120000)

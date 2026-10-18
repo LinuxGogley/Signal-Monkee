@@ -16,7 +16,7 @@
     <div class="seg" id="baseSeg"><button data-b="map" class="on">Map</button><button data-b="sat">Satellite</button><button data-b="flat">Contrast</button></div>
     <div class="hgrow"></div>
     <div class="seg" id="modeSeg" title="Operator: simple line-of-sight check · Engineer: full RF analysis"><button data-m="operator">Operator</button><button data-m="engineer">Engineer</button></div>
-    <div class="seg" id="unitSeg" title="Height units"><button data-u="m" class="on">m</button><button data-u="ft">ft</button></div>
+    <div class="seg" id="unitSeg" title="Units: m = metres &amp; km, ft = feet &amp; nautical miles"><button data-u="m" class="on">m</button><button data-u="ft">ft</button></div>
     <span id="status"><span class="dot"></span><span id="statusTxt">ready</span></span>
   </header>
   <nav id="rail"></nav>
@@ -35,7 +35,7 @@
     <div id="maptools">
       <button class="hbtn" id="pickTx" data-ico="pin" title="Click map to place transmitter (T)">Tx</button>
       <button class="hbtn" id="pickRx" data-ico="pin" title="Click map to place receiver (R)">Rx</button>
-      <button class="hbtn" id="pickGn" data-ico="sat" title="Click map to set GNSS/SATCOM analysis point (G)">Satellite</button>
+      <button class="hbtn" id="pickGn" data-ico="sat" title="Click map to set GNSS/SATCOM analysis point (G)">Point</button>
       <button class="hbtn" id="pickTp" data-ico="plus" title="Click map to add test points (A)">Test pt</button>
       <div style="position:relative"><button class="hbtn" id="clrRes" data-ico="clear" title="Clear results or site markers">Clear ▾</button><div id="clrMenu" class="card hidden" style="position:absolute;right:0;top:32px;z-index:900;min-width:230px;padding:4px"><button class="btn sm" style="width:100%;margin:2px 0" data-c="res">Clear results (coverage, path, grids)</button><button class="btn sm" style="width:100%;margin:2px 0" data-c="sites">Clear Tx / Rx markers</button><button class="btn sm" style="width:100%;margin:2px 0" data-c="all">Clear everything (incl. satellite point)</button></div></div>
     </div>

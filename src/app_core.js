@@ -51,9 +51,14 @@ function dBm2W(d) { return Math.pow(10, (d - 30) / 10); }
 function W2dBm(w) { return 10 * Math.log10(Math.max(w, 1e-15) * 1000); }
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
 function hU(m) { return S.units.h === 'ft' ? m / 0.3048 : m; }
-function hStr(m, d) { return fx(m, d == null ? 1 : d) + ' m (' + fx(m / 0.3048, 0) + ' ft)'; }
+/* Units: metres → km for distances; feet → nautical miles (aviation convention). The other unit follows in brackets. */
+function IMP() { return S.units.h === 'ft'; }
+function hStr(m, d) { return IMP() ? fx(m / 0.3048, 0) + ' ft (' + fx(m, d == null ? 1 : d) + ' m)' : fx(m, d == null ? 1 : d) + ' m (' + fx(m / 0.3048, 0) + ' ft)'; }
+function hDual(m) { return IMP() ? fx(m / 0.3048, 0) + ' ft (' + fx(m, 0) + ' m)' : fx(m, 0) + ' m (' + fx(m / 0.3048, 0) + ' ft)'; }   // heights in reports
 function hShort(m) { return S.units.h === 'ft' ? fx(m / 0.3048, 0) + ' ft' : fx(m, 1) + ' m'; }
-function dStr(m) { return fx(m / 1000, 2) + ' km (' + fx(m / 1609.344, 2) + ' mi, ' + fx(m / 1852, 2) + ' NM)'; }
+function dStr(m) { return IMP() ? fx(m / 1852, 2) + ' NM (' + fx(m / 1000, 2) + ' km, ' + fx(m / 1609.344, 2) + ' mi)' : fx(m / 1000, 2) + ' km (' + fx(m / 1852, 2) + ' NM, ' + fx(m / 1609.344, 2) + ' mi)'; }
+function dU(m, d) { d = d == null ? 1 : d; return IMP() ? fx(m / 1852, d) + ' NM' : fx(m / 1000, d) + ' km'; }            // distance, display unit only
+function dDual(m, d) { d = d == null ? 1 : d; return IMP() ? fx(m / 1852, d) + ' NM (' + fx(m / 1000, d) + ' km)' : fx(m / 1000, d) + ' km (' + fx(m / 1852, d) + ' NM)'; }
 function dms(v, pos, neg) { var s = v < 0 ? neg : pos; v = Math.abs(v); var d = Math.floor(v), mm = (v - d) * 60, m = Math.floor(mm), sec = (mm - m) * 60; if (sec >= 59.995) { sec = 0; m++; } if (m === 60) { m = 0; d++; } return d + '° ' + String(m).padStart(2, '0') + '\' ' + sec.toFixed(1).padStart(4, '0') + '" ' + s; }
 function llStr(lat, lon) { return fx(lat, 6) + ', ' + fx(lon, 6) + '  (' + dms(lat, 'N', 'S') + ', ' + dms(lon, 'E', 'W') + ')'; }
 function nowISO() { return new Date().toISOString().replace('T', ' ').slice(0, 19) + 'Z'; }
@@ -213,6 +218,7 @@ function initMap() {
   map.createPane('vecPane'); map.getPane('vecPane').style.zIndex = 390; map.getPane('vecPane').style.pointerEvents = 'none';
   buildBaseLayers();
   setBase(S.base);
+  map.on('zoomend', function () { if (S.base === 'flat' && vecDemCoast !== null && vecDemCoast !== demCoastOn()) refreshVectors(); });
   map.on('click', onMapClick);
   map.on('mousemove', onMapMove);
   map.on('contextmenu', function (e) {
@@ -267,7 +273,121 @@ var THEMES = {
 function TH() { return THEMES[S.flatTheme] || THEMES.outline; }
 function hexRGB(h) { h = h.replace('#', ''); return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)]; }
 /* Contrast basemap: hillshade computed in-browser from the same DEM tiles used for propagation.
-   overlay = true → transparent relief (shadows/highlights over the land fill); false → opaque grey hillshade */
+   overlay = true → transparent relief (shadows/highlights over the land fill); false → opaque grey hillshade.
+   From zoom COASTZ up, the coastline is traced from the terrain itself (land/sea from the DEM) so it lines up with
+   the relief: the generalized Natural Earth outline is only trusted well inland (CORE_M from its coast), where it
+   protects below-sea-level land (Death Valley, Salton basin) from being painted as sea. */
+var COASTZ = 8, CORE_M = 15000;
+var mercLand = null, mercLakes = null, maskCv = null;
+function mercPolys(polys) {
+  return polys.map(function (poly) {
+    var bb = [1, 1, 0, 0];
+    var rings = poly.map(function (r) {
+      var a = new Float64Array(r.length);
+      for (var i = 0; i < r.length; i += 2) {
+        var lat = clamp(r[i + 1], -85, 85), x = (r[i] + 180) / 360, y = (1 - Math.log(Math.tan(Math.PI / 4 + lat * D2R / 2)) / Math.PI) / 2;
+        a[i] = x; a[i + 1] = y;
+        if (x < bb[0]) bb[0] = x; if (y < bb[1]) bb[1] = y; if (x > bb[2]) bb[2] = x; if (y > bb[3]) bb[3] = y;
+      }
+      return a;
+    });
+    return { bb: bb, rings: rings };
+  });
+}
+function coastData() {
+  if (!DATA.basemap || !DATA.basemap.land) return false;
+  if (!mercLand) { mercLand = mercPolys(DATA.basemap.land); mercLakes = mercPolys((DATA.basemap.lakes || []).map(function (r) { return [r]; })); }
+  return true;
+}
+/* trace the polygons that touch this tile (plus `padPx`) onto ctx g as one even-odd path */
+function tilePath(g, polys, c, padPx) {
+  var S2 = 256 * Math.pow(2, c.z), x0 = c.x * 256, y0 = c.y * 256, pad = padPx / S2, n = 0;
+  var tb = [c.x * 256 / S2 - pad, c.y * 256 / S2 - pad, (c.x + 1) * 256 / S2 + pad, (c.y + 1) * 256 / S2 + pad];
+  g.beginPath();
+  polys.forEach(function (p) {
+    if (p.bb[2] < tb[0] || p.bb[0] > tb[2] || p.bb[3] < tb[1] || p.bb[1] > tb[3]) return;
+    n++;
+    p.rings.forEach(function (a) { g.moveTo(a[0] * S2 - x0, a[1] * S2 - y0); for (var i = 2; i < a.length; i += 2) g.lineTo(a[i] * S2 - x0, a[i + 1] * S2 - y0); g.closePath(); });
+  });
+  return n;
+}
+/* rasterize land (and its inland core) and lakes for one tile → {land, core, lake} byte masks */
+function tileMasks(c, corePx) {
+  if (!maskCv) { maskCv = document.createElement('canvas'); maskCv.width = maskCv.height = 256; }
+  var g = maskCv.getContext('2d', { willReadFrequently: true }), out = {};
+  function grab() { var d = g.getImageData(0, 0, 256, 256).data, m = new Uint8Array(65536); for (var i = 0; i < 65536; i++) m[i] = d[i * 4 + 3] > 127 ? 1 : 0; return m; }
+  g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, 256, 256); g.fillStyle = '#000';
+  if (tilePath(g, mercLand, c, corePx)) {
+    g.fill('evenodd'); out.land = grab();
+    g.globalCompositeOperation = 'destination-out'; g.lineWidth = 2 * corePx; g.lineJoin = 'round'; g.stroke(); g.globalCompositeOperation = 'source-over';
+    out.core = grab();
+  } else { out.land = new Uint8Array(65536); out.core = out.land; }
+  g.clearRect(0, 0, 256, 256);
+  out.lake = tilePath(g, mercLakes, c, 0) ? (g.fill('evenodd'), grab()) : null;
+  return out;
+}
+/* Land/sea for one tile, keeping only the contiguous landmass:
+   • the Natural Earth land polygon is the starting shape (islands included);
+   • the sea is flooded in from outside that polygon through terrain at or below sea level, so bays and beaches the
+     outline wrongly covers are trimmed back to the terrain, while inland low spots (not connected to the sea) stay land;
+   • nothing is added outside the polygon, so near-zero noise in coastal bathymetry can't create offshore blobs;
+   • small, low land fragments the trimming leaves offshore (shoreline noise) are dropped; islands with relief stay. */
+function classify(CL, EL, M, minPx, r) {
+  var N = 65536, i, k, ws = new Uint8Array(N), sea = new Uint8Array(N), Q = new Int32Array(N), qh = 0, qt = 0, x, y;
+  for (i = 0; i < N; i++) ws[i] = EL[i] <= 2 ? 1 : 0;           // ≤ 2 m: sea surface plus the noise terrain tiles carry at the shoreline
+  var wsm = new Uint8Array(N);                                    // 3×3 majority filter: smooth single-pixel noise
+  for (y = 0; y < 256; y++) for (x = 0; x < 256; x++) {
+    var cnt = 0, tot = 0;
+    for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) { var X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X > 255 || Y > 255) continue; tot++; cnt += ws[Y * 256 + X]; }
+    wsm[y * 256 + x] = cnt * 2 > tot ? 1 : 0;
+  }
+  function pass(j) { return !M.land[j] || (wsm[j] && !M.core[j]); }
+  for (i = 0; i < N; i++) {
+    x = i & 255; y = i >> 8;
+    var border = x === 0 || y === 0 || x === 255 || y === 255;
+    if (!M.land[i] || (border && wsm[i] && !M.core[i])) { sea[i] = 1; Q[qt++] = i; }
+  }
+  while (qh < qt) {
+    i = Q[qh++]; x = i & 255; y = i >> 8;
+    var nb = [x > 0 ? i - 1 : -1, x < 255 ? i + 1 : -1, y > 0 ? i - 256 : -1, y < 255 ? i + 256 : -1];
+    for (k = 0; k < 4; k++) { var j = nb[k]; if (j >= 0 && !sea[j] && pass(j)) { sea[j] = 1; Q[qt++] = j; } }
+  }
+  // smooth the shoreline: opening (removes thin spurs) then closing (fills narrow notches), radius r px
+  var L1 = new Uint8Array(N); for (i = 0; i < N; i++) L1[i] = sea[i] ? 0 : 1;
+  function morph(m, grow) {
+    var o = new Uint8Array(N);
+    for (y = 0; y < 256; y++) for (x = 0; x < 256; x++) {
+      var v = m[y * 256 + x];
+      for (var dy = -1; dy <= 1 && v !== (grow ? 1 : 0); dy++) for (var dx = -1; dx <= 1; dx++) {
+        var X = clamp(x + dx, 0, 255), Y = clamp(y + dy, 0, 255), q = m[Y * 256 + X];
+        if (grow ? q : !q) { v = grow ? 1 : 0; break; }
+      }
+      o[y * 256 + x] = v;
+    }
+    return o;
+  }
+  var t; for (t = 0; t < r; t++) L1 = morph(L1, false); for (t = 0; t < r; t++) L1 = morph(L1, true);
+  for (t = 0; t < r; t++) L1 = morph(L1, true); for (t = 0; t < r; t++) L1 = morph(L1, false);
+  for (i = 0; i < N; i++) { if (M.core[i]) L1[i] = 1; if (!M.land[i]) L1[i] = 0; }   // never past the outline, never inside the core
+  for (i = 0; i < N; i++) CL[i] = M.lake && M.lake[i] ? 2 : L1[i] ? 1 : 0;
+  // drop small land fragments that don't reach the tile edge
+  var seen = new Uint8Array(N);
+  for (i = 0; i < N; i++) {
+    if (CL[i] !== 1 || seen[i]) continue;
+    qh = qt = 0; Q[qt++] = i; seen[i] = 1; var edge = false, top = -1e9;
+    while (qh < qt) {
+      var a = Q[qh++]; x = a & 255; y = a >> 8; if (x === 0 || y === 0 || x === 255 || y === 255) edge = true; if (EL[a] > top) top = EL[a];
+      var nb2 = [x > 0 ? a - 1 : -1, x < 255 ? a + 1 : -1, y > 0 ? a - 256 : -1, y < 255 ? a + 256 : -1];
+      for (k = 0; k < 4; k++) { var b = nb2[k]; if (b >= 0 && !seen[b] && CL[b] === 1) { seen[b] = 1; Q[qt++] = b; } }
+    }
+    if (!edge && qt < minPx && top < 15) for (k = 0; k < qt; k++) CL[Q[k]] = 0;   // low flat specks = shoreline noise; real islands have relief
+  }
+}
+function coastW() { var th = TH(), hw = th.heavy ? 1.7 : 1; return (th.w || [1.1 * hw])[0]; }
+function strokeCoast(g, c) { // no terrain for this tile: fall back to the vector outline, drawn into the tile
+  if (!S.layers.vectors || !coastData()) return;
+  if (tilePath(g, mercLand, c, 4)) { g.strokeStyle = TH().coast; g.lineWidth = coastW(); g.lineJoin = 'round'; g.stroke(); }
+}
 function makeShadeLayer(overlay) {
   var Shade = L.GridLayer.extend({
     createTile: function (c, done) {
@@ -275,33 +395,63 @@ function makeShadeLayer(overlay) {
       var z = c.z, zd = Math.min(z, 12), sc = Math.pow(2, z - zd);
       var tx = Math.floor(c.x / sc), ty = Math.floor(c.y / sc);
       var th = TH(), ocean = th.ocean || hexRGB(th.bg);
-      var g = cv.getContext('2d');
+      var g = cv.getContext('2d'), demCoast = z >= COASTZ && coastData();
       if (!overlay) { g.fillStyle = th.bg; g.fillRect(0, 0, 256, 256); }
-      if (zd < 2 || !DEM.cfg.useTiles && !overlay) { setTimeout(function () { done(null, cv); }, 0); return cv; }
+      if (zd < 2 || !DEM.cfg.useTiles && !overlay) { if (demCoast) strokeCoast(g, c); setTimeout(function () { done(null, cv); }, 0); return cv; }
       DEM.loadTile(zd, tx, ty).then(function (arr) {
-        if (!arr) { done(null, cv); return; }
+        if (!arr) { if (demCoast) strokeCoast(g, c); done(null, cv); return; }
         var img = g.createImageData(256, 256), d = img.data;
         var ox = (c.x * 256) / sc - tx * 256, oy = (c.y * 256) / sc - ty * 256;
         var n2 = Math.pow(2, z), lat = Math.atan(Math.sinh(Math.PI * (1 - 2 * (c.y + 0.5) / n2))) * R2D;
         var cell = 156543.03 * Math.cos(lat * D2R) / n2, zf = z < 7 ? 6 : z < 10 ? 3 : 1.6;
         function E(px, py) { var x = clamp(Math.floor(ox + px / sc), 0, 255), y = clamp(Math.floor(oy + py / sc), 0, 255); return arr[y * 256 + x]; }
         var az = 315 * D2R, alt = 45 * D2R, rl = th.relief || [0, 0, [255, 255, 255]];
-        for (var py = 0; py < 256; py++) for (var px = 0; px < 256; px++) {
-          var e = E(px, py), i = (py * 256 + px) * 4;
-          var dzdx = (E(px + 1, py) - E(px - 1, py)) / (2 * cell) * zf, dzdy = (E(px, py + 1) - E(px, py - 1)) / (2 * cell) * zf;
+        var px, py, i, e, dzdx, dzdy;
+        // pass 1: hillshade value and land/sea class per pixel (0 sea, 1 land, 2 lake)
+        var HS = new Float32Array(65536), CL = new Uint8Array(65536), EL = new Float32Array(65536);
+        var M = demCoast ? tileMasks(c, Math.max(3, CORE_M / cell)) : null;
+        for (py = 0; py < 256; py++) for (px = 0; px < 256; px++) {
+          i = py * 256 + px; e = E(px, py);
+          dzdx = (E(px + 1, py) - E(px - 1, py)) / (2 * cell) * zf; dzdy = (E(px, py + 1) - E(px, py - 1)) / (2 * cell) * zf;
           var slope = Math.atan(Math.hypot(dzdx, dzdy)), aspect = Math.atan2(dzdy, -dzdx);
-          var hs = clamp(Math.cos(alt) * Math.cos(slope) + Math.sin(alt) * Math.sin(slope) * Math.cos(az - Math.PI / 2 - aspect), 0, 1);
-          var sea = e <= 0 && Math.abs(dzdx) + Math.abs(dzdy) < 0.02 * zf || e < -5;
-          if (overlay) { // shadows darken, sunlit slopes take the theme tint; sea and flat land stay transparent
-            if (sea) continue;
-            var a = 0.707 - hs;
-            if (a > 0) { d[i] = d[i + 1] = d[i + 2] = 0; d[i + 3] = clamp(a / 0.707 * rl[0] * 255, 0, 255); }
-            else { d[i] = rl[2][0]; d[i + 1] = rl[2][1]; d[i + 2] = rl[2][2]; d[i + 3] = clamp(-a / 0.293 * rl[1] * 255, 0, 255); }
+          HS[i] = clamp(Math.cos(alt) * Math.cos(slope) + Math.sin(alt) * Math.sin(slope) * Math.cos(az - Math.PI / 2 - aspect), 0, 1); EL[i] = e;
+          if (!M) CL[i] = e <= 0 && Math.abs(dzdx) + Math.abs(dzdy) < 0.02 * zf || e < -5 ? 0 : 1;
+        }
+        if (M) classify(CL, EL, M, Math.max(12, Math.round(5e6 / (cell * cell))), clamp(Math.round(250 / cell), 1, 4));
+        // pass 2: coastline pixels — land pixels within ~line-width of the sea (lakes don't count)
+        var edge = null;
+        if (M && S.layers.vectors) {
+          edge = new Uint8Array(65536); var r = Math.max(1, Math.round(coastW() * 0.75));
+          for (py = 0; py < 256; py++) for (px = 0; px < 256; px++) {
+            i = py * 256 + px; if (CL[i] !== 1) continue;
+            search: for (var dy = -r; dy <= r; dy++) for (var dx = -r; dx <= r; dx++) {
+              var qx = px + dx, qy = py + dy; if (qx < 0 || qy < 0 || qx > 255 || qy > 255 || dx * dx + dy * dy > r * r) continue;
+              if (CL[qy * 256 + qx] === 0) { edge[i] = 1; break search; }
+            }
+          }
+        }
+        var fill = th.fill ? hexRGB(th.fill) : null, cst = hexRGB(th.coast);
+        // pass 3: colour
+        for (i = 0; i < 65536; i++) {
+          var j = i * 4, hs = HS[i], cl = CL[i];
+          if (edge && edge[i]) { d[j] = cst[0]; d[j + 1] = cst[1]; d[j + 2] = cst[2]; d[j + 3] = 255; continue; }
+          if (overlay) {
+            var inLand = !M || M.land[i];
+            if (cl === 2) continue;                                                   // lake: vector lake fill shows through
+            if (cl === 0) { if (M) { d[j] = ocean[0]; d[j + 1] = ocean[1]; d[j + 2] = ocean[2]; d[j + 3] = 255; } continue; } // sea the outline wrongly calls land
+            var a = 0.707 - hs, base = inLand ? null : fill;                         // land the outline missed gets the land fill
+            if (!base) {
+              if (a > 0) { d[j] = d[j + 1] = d[j + 2] = 0; d[j + 3] = clamp(a / 0.707 * rl[0] * 255, 0, 255); }
+              else { d[j] = rl[2][0]; d[j + 1] = rl[2][1]; d[j + 2] = rl[2][2]; d[j + 3] = clamp(-a / 0.293 * rl[1] * 255, 0, 255); }
+            } else {
+              var t = a > 0 ? a / 0.707 * rl[0] : -a / 0.293 * rl[1], tc = a > 0 ? [0, 0, 0] : rl[2];
+              d[j] = base[0] * (1 - t) + tc[0] * t; d[j + 1] = base[1] * (1 - t) + tc[1] * t; d[j + 2] = base[2] * (1 - t) + tc[2] * t; d[j + 3] = 255;
+            }
             continue;
           }
-          if (sea) { d[i] = ocean[0]; d[i + 1] = ocean[1]; d[i + 2] = ocean[2]; d[i + 3] = 255; continue; }
-          var v = 18 + hs * 175 + Math.min(e / 4000, 1) * 40;
-          d[i] = d[i + 1] = d[i + 2] = clamp(v, 0, 255); d[i + 3] = 255;
+          if (cl !== 1) { d[j] = ocean[0]; d[j + 1] = ocean[1]; d[j + 2] = ocean[2]; d[j + 3] = 255; continue; }
+          var v = 18 + hs * 175 + Math.min(EL[i] / 4000, 1) * 40;
+          d[j] = d[j + 1] = d[j + 2] = clamp(v, 0, 255); d[j + 3] = 255;
         }
         g.putImageData(img, 0, 0);
         done(null, cv);
@@ -320,6 +470,8 @@ function landLayer() {
   if (th.lake && DATA.basemap.lakes) g.addLayer(L.polygon(DATA.basemap.lakes.map(function (r) { var o = []; for (var i = 0; i < r.length; i += 2) o.push([r[i + 1], r[i]]); return [o]; }), { renderer: rnd2, pane: 'landPane', stroke: false, fillColor: th.lake, fillOpacity: 1, interactive: false }));
   return g;
 }
+var vecDemCoast = null;
+function demCoastOn() { return !!shadeLayer && map.getZoom() >= COASTZ; }
 function refreshVectors() {
   if (vecLayer) { map.removeLayer(vecLayer); vecLayer = null; }
   if (!DATA.basemap || S.base !== 'flat' || !S.layers.vectors) return;
@@ -329,7 +481,8 @@ function refreshVectors() {
     g.addLayer(L.polyline(lines, { color: color, weight: w, dashArray: dash, renderer: L.canvas({ pane: 'vecPane' }), interactive: false, smoothFactor: 1.5, pane: 'vecPane' }));
   }
   var hw = th.heavy ? 1.7 : 1, w = th.w || [1.1 * hw, 1.3 * hw, 1 * hw];   // line weights: [coast, country borders, states]
-  mk(DATA.basemap.coast, th.coast, w[0]);
+  vecDemCoast = demCoastOn();
+  if (!vecDemCoast) mk(DATA.basemap.coast, th.coast, w[0]);              // zoomed in, the relief tiles trace the coast from the terrain
   if (!th.fill) mk(DATA.basemap.lakes, th.coast, Math.max(0.8, w[0] * 0.6));
   mk(DATA.basemap.borders, th.borders, w[1]);
   mk(DATA.basemap.states, th.states, w[2], '4 3');
@@ -436,6 +589,15 @@ function showPanel(id) {
   bind($('pbody'));
   if (p.after) p.after($('pbody'));
   applyIcons($('pbody'));
+  runButtons();
+}
+function runPath() { return curPanel === 'los' ? RF.runP2P({ losOnly: true }) : RF.runP2P(); }
+function runCoverage() { return curPanel === 'los' ? COV.run({ losOnly: true }) : COV.run(); }
+function runButtons() {   // Save / Load / Path / Coverage live on the RF and LOS panels only
+  var bar = $('runbtns'), los = curPanel === 'los'; if (!bar) return;
+  bar.classList.toggle('hidden', curPanel !== 'rf' && curPanel !== 'los');
+  $('bP2P').title = los ? 'Line-of-sight check between A and B — terrain only (P)' : 'Run point-to-point path analysis (P)';
+  $('bCov').title = los ? 'Viewshed map from A — terrain only (C)' : 'Run area coverage (C)';
 }
 function rerender() { if (curPanel) { var st = $('pbody').scrollTop; var opens = Array.prototype.map.call(document.querySelectorAll('#pbody details.acc'), function (d) { return d.open; }); showPanel(curPanel); document.querySelectorAll('#pbody details.acc').forEach(function (d, i) { if (opens[i] !== undefined) d.open = opens[i]; }); $('pbody').scrollTop = st; } }
 
