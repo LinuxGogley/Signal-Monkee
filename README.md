@@ -1,5 +1,7 @@
 # Signal Monkee
 
+<img width="1872" height="932" alt="Screen Shot 2026-10-17 at 20 26 59 PM" src="https://github.com/user-attachments/assets/b4790c71-666f-4c9e-8e03-398484a5eb45" />
+
 A terrain-aware RF path-link and coverage tool that runs entirely in a web browser, in the spirit of [SPLAT!](https://www.qsl.net/kd2bd/splat.html). It does:
 
 - **Point-to-point path analysis:** terrain profile with earth curvature, Fresnel zones, obstructions, required antenna heights, link budget, and a pass/fail verdict.
